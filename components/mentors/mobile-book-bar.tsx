@@ -4,9 +4,14 @@ import { useEffect, useState } from "react"
 
 import { buttonVariants } from "@/components/ui/button"
 import { formatPrice } from "@/lib/format"
+import { getStartingPrice } from "@/lib/offers"
+import { useManagedMentor } from "@/lib/store"
 
 // Shown only once the offer panel has scrolled out of view, so there's one booking action on screen at a time.
-export function MobileBookBar({ price, firstName }: { price: number; firstName: string }) {
+// The price is read from the same managed mentor the panel uses, so a mentor's edits show here too.
+export function MobileBookBar({ slug, firstName }: { slug: string; firstName: string }) {
+  const mentor = useManagedMentor(slug)
+  const price = mentor ? getStartingPrice(mentor) : null
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -17,7 +22,7 @@ export function MobileBookBar({ price, firstName }: { price: number; firstName: 
     return () => observer.disconnect()
   }, [])
 
-  if (!visible) return null
+  if (!visible || price === null) return null
 
   return (
     <div data-mobile-bar className="mobile-bar">

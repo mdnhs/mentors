@@ -146,7 +146,7 @@ test.describe("reviews", () => {
       ],
       [
         { id: "done", mentorSlug: "tanvir-rahman", kind: "review", status: "completed" },
-        { id: "soon", mentorSlug: "tanvir-rahman", kind: "one-on-one", status: "upcoming" },
+        { id: "soon", mentorSlug: "tanvir-rahman", kind: "one-on-one", status: "confirmed" },
         { id: "other", mentorSlug: "nusrat-jahan", kind: "one-on-one", status: "completed" },
       ]
     )

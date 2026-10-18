@@ -2,18 +2,19 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
-import { CalendarIcon, ClockIcon, LanguagesIcon, UsersIcon, VideoIcon } from "lucide-react"
+import { CalendarIcon, ClockIcon, LanguagesIcon, VideoIcon } from "lucide-react"
 
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { Rating } from "@/components/mentors/rating"
-import { JoinPanel } from "@/components/sessions/join-panel"
+import { JoinPanel, SessionStatusMobile } from "@/components/sessions/join-panel"
+import { LocalTime } from "@/components/sessions/local-time"
 import { SessionCard } from "@/components/sessions/session-card"
 import { BackLink } from "@/components/site/back-link"
 import { Container } from "@/components/site/container"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getCategory } from "@/lib/categories"
 import { getMentor, getSession, getSessions } from "@/lib/data"
-import { formatDate, formatDuration, formatTime } from "@/lib/format"
+import { formatDate, formatDuration, formatTime, timezoneLabel } from "@/lib/format"
 
 export function generateStaticParams() {
   return getSessions().map((session) => ({ id: session.id }))
@@ -59,12 +60,15 @@ async function SessionDetail({ params }: Pick<PageProps<"/sessions/[id]">, "para
     .slice(0, 3)
 
   const facts = [
-    { icon: CalendarIcon, text: formatDate(session.startsAt) },
-    { icon: ClockIcon, text: `${formatTime(session.startsAt)} Dhaka · ${formatDuration(session.durationMinutes)}` },
+    { icon: CalendarIcon, text: formatDate(session.startsAt, session.timezone) },
+    {
+      icon: ClockIcon,
+      text: `${formatTime(session.startsAt, session.timezone)} ${timezoneLabel(session.timezone, session.startsAt)} · ${formatDuration(session.durationMinutes)}`,
+      extra: <LocalTime iso={session.startsAt} timeZone={session.timezone} />,
+    },
     { icon: VideoIcon, text: `${session.format}, online` },
     { icon: LanguagesIcon, text: session.language },
-    session.seats && { icon: UsersIcon, text: `${session.seats.total - session.seats.taken} of ${session.seats.total} seats left` },
-  ].filter(Boolean) as { icon: typeof CalendarIcon; text: string }[]
+  ]
 
   return (
     <Container className="pt-6 pb-16 sm:pt-8 sm:pb-24">
@@ -82,13 +86,26 @@ async function SessionDetail({ params }: Pick<PageProps<"/sessions/[id]">, "para
           <p className="mt-3 max-w-2xl text-lg text-muted-foreground">{session.summary}</p>
 
           <ul className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
-            {facts.map(({ icon: Icon, text }) => (
+            {facts.map(({ icon: Icon, text, extra }) => (
               <li key={text} className="flex items-center gap-2.5">
-                <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-                {text}
+                <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span>
+                  {text}
+                  {extra}
+                </span>
               </li>
             ))}
           </ul>
+
+          <ul className="mt-4 flex flex-wrap gap-2" aria-label="Topics covered">
+            {session.expertise.map((topic) => (
+              <li key={topic} className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                {topic}
+              </li>
+            ))}
+          </ul>
+
+          <SessionStatusMobile session={session} />
 
           <section aria-labelledby="agenda" className="mt-10">
             <h2 id="agenda" className="text-subheading">What we&apos;ll cover</h2>

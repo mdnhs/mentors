@@ -1,11 +1,12 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
-import { ArrowUpRightIcon, CheckIcon, ClockIcon, MapPinIcon, MessageSquareIcon, ShieldCheckIcon, ShieldIcon, StarIcon } from "lucide-react"
+import { ArrowUpRightIcon, CheckIcon, MapPinIcon, MessageSquareIcon, ShieldCheckIcon, ShieldIcon, StarIcon } from "lucide-react"
 
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { MentorPhoto } from "@/components/mentors/mentor-photo"
 import { MentorsBackLink } from "@/components/mentors/mentors-back-link"
+import { VerificationList } from "@/components/mentors/verification-list"
 import { MobileBookBar } from "@/components/mentors/mobile-book-bar"
 import { OfferPanel } from "@/components/mentors/offer-panel"
 import { ProfileSkeleton } from "@/components/mentors/profile-skeleton"
@@ -15,7 +16,7 @@ import { Container } from "@/components/site/container"
 import { offerTypeLabels } from "@/lib/categories"
 import { availabilityLabel, getLocation, getMentor, getMentors, getRating, getReviews } from "@/lib/data"
 import { formatMonthYear } from "@/lib/format"
-import { getStartingPrice } from "@/lib/offers"
+import { hasAnyCheck, verificationSummary } from "@/lib/verification"
 import type { Mentor, MentorLinkKind } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -49,7 +50,6 @@ async function MentorProfile({ params }: Pick<PageProps<"/mentors/[slug]">, "par
   if (!mentor) notFound()
 
   const firstName = mentor.name.split(" ")[0]
-  const startingPrice = getStartingPrice(mentor)
 
   return (
     <>
@@ -96,28 +96,20 @@ async function MentorProfile({ params }: Pick<PageProps<"/mentors/[slug]">, "par
               </section>
             )}
 
-            <Verification mentor={mentor} />
+            <VerificationList verification={mentor.verification} />
             <Reviews mentor={mentor} />
           </div>
         </div>
       </Container>
 
-      {startingPrice !== null && <MobileBookBar price={startingPrice} firstName={firstName} />}
+      <MobileBookBar slug={mentor.slug} firstName={firstName} />
     </>
   )
 }
 
-function verificationSummary(mentor: Mentor) {
-  const { identity, experience } = mentor.verification
-  if (identity && experience) return "ID and experience verified"
-  if (identity) return "ID verified"
-  if (experience) return "Experience verified"
-  return "Not verified yet"
-}
-
 function ProfileHeader({ mentor, className }: { mentor: Mentor; className?: string }) {
   const rating = getRating(mentor.slug)
-  const verified = mentor.verification.identity || mentor.verification.experience
+  const verified = hasAnyCheck(mentor.verification)
   const VerifiedIcon = verified ? ShieldCheckIcon : ShieldIcon
 
   return (
@@ -138,7 +130,7 @@ function ProfileHeader({ mentor, className }: { mentor: Mentor; className?: stri
           <li>
             <a href="#verification" className={cn("inline-flex items-center gap-1.5 rounded-sm focus-ring hover:underline", verified ? "text-success" : "text-muted-foreground")}>
               <VerifiedIcon className="size-4 shrink-0" aria-hidden="true" />
-              {verificationSummary(mentor)}
+              {verificationSummary(mentor.verification)}
             </a>
           </li>
           {rating && (
@@ -183,7 +175,7 @@ function AtAGlance({ mentor }: { mentor: Mentor }) {
     { label: "Timezone", value: <TimezoneLabel timeZone={mentor.timezone} /> },
     {
       label: "Usually free",
-      value: mentor.availability.days.length > 0 ? `${availabilityLabel(mentor)}, Dhaka time` : "No open times right now",
+      value: mentor.availability.days.length > 0 ? `${availabilityLabel(mentor)}, mentor local time` : "No open times right now",
     },
   ].filter((row) => row.value)
 
@@ -198,47 +190,6 @@ function AtAGlance({ mentor }: { mentor: Mentor }) {
           </div>
         ))}
       </dl>
-    </section>
-  )
-}
-
-function Verification({ mentor }: { mentor: Mentor }) {
-  const checks = [
-    {
-      done: mentor.verification.identity,
-      title: mentor.verification.identity ? "Identity verified" : "Identity not verified yet",
-      detail: mentor.verification.identity ? "A government-issued ID was checked by our team." : "We haven't confirmed this mentor's ID yet.",
-    },
-    {
-      done: mentor.verification.experience,
-      title: mentor.verification.experience ? "Experience verified" : "Experience not verified yet",
-      detail: mentor.verification.experience
-        ? "The role and education shown were confirmed with documents."
-        : "The role and education shown are as stated by the mentor.",
-    },
-  ]
-
-  return (
-    <section aria-labelledby="verification">
-      <h2 id="verification" className="scroll-mt-24 text-subheading">Verification</h2>
-      <ul className="mt-4 grid gap-5 sm:grid-cols-2">
-        {checks.map((check) => (
-          <li key={check.title} className="flex gap-3">
-            {check.done ? (
-              <ShieldCheckIcon className="size-5 shrink-0 text-success" aria-hidden="true" />
-            ) : (
-              <ClockIcon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            )}
-            <div>
-              <p className="text-sm font-medium">{check.title}</p>
-              <p className="mt-0.5 text-sm text-muted-foreground">{check.detail}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-4 text-xs text-muted-foreground">
-        Verification confirms who a mentor is and what they&apos;ve done. It isn&apos;t a rating of their mentoring; reviews from completed sessions are.
-      </p>
     </section>
   )
 }

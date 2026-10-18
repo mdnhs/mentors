@@ -9,12 +9,16 @@ import { Container } from "@/components/site/container"
 import { Logo } from "@/components/site/logo"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { signOut, useAuth } from "@/lib/auth"
 import { nav } from "@/lib/site"
 import { cn } from "@/lib/utils"
 
 export function SiteHeader() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const auth = useAuth()
+  const signedIn = auth.status === "signed-in"
+  const isAdmin = signedIn && auth.session.role === "admin"
 
   const isActive = (href: string) => {
     const path = href.split("?")[0]
@@ -40,12 +44,23 @@ export function SiteHeader() {
         </nav>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
+          {isAdmin && (
+            <Link href="/dashboard/admin" className={cn(buttonVariants({ variant: "ghost" }), "hidden px-3 lg:inline-flex")}>
+              Admin
+            </Link>
+          )}
           <Link href="/dashboard" className={cn(buttonVariants({ variant: "ghost" }), "hidden px-3 lg:inline-flex")}>
             My sessions
           </Link>
-          <Link href="/login" className={cn(buttonVariants({ variant: "ghost" }), "hidden px-3 lg:inline-flex")}>
-            Log in
-          </Link>
+          {signedIn ? (
+            <Button variant="ghost" className="hidden px-3 lg:inline-flex" onClick={signOut}>
+              Log out
+            </Button>
+          ) : (
+            <Link href="/login" className={cn(buttonVariants({ variant: "ghost" }), "hidden px-3 lg:inline-flex")}>
+              Log in
+            </Link>
+          )}
           <Link href="/become-a-mentor" className={cn(buttonVariants(), "hidden lg:inline-flex")}>
             Become a Mentor
           </Link>
@@ -60,7 +75,7 @@ export function SiteHeader() {
                 <Logo />
               </div>
               <nav aria-label="Mobile" className="flex flex-col p-2">
-                {[...nav, { label: "My sessions", href: "/dashboard" }].map((item) => (
+                {[...nav, { label: "My sessions", href: "/dashboard" }, ...(isAdmin ? [{ label: "Admin", href: "/dashboard/admin" }] : [])].map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}
@@ -75,9 +90,15 @@ export function SiteHeader() {
                 <Link href="/become-a-mentor" onClick={() => setOpen(false)} className={cn(buttonVariants({ size: "lg" }), "text-base")}>
                   Become a Mentor
                 </Link>
-                <Link href="/login" onClick={() => setOpen(false)} className={cn(buttonVariants({ variant: "outline", size: "lg" }), "text-base")}>
-                  Log in
-                </Link>
+                {signedIn ? (
+                  <Button variant="outline" size="lg" className="text-base" onClick={() => { signOut(); setOpen(false) }}>
+                    Log out
+                  </Button>
+                ) : (
+                  <Link href="/login" onClick={() => setOpen(false)} className={cn(buttonVariants({ variant: "outline", size: "lg" }), "text-base")}>
+                    Log in
+                  </Link>
+                )}
               </div>
             </SheetContent>
           </Sheet>

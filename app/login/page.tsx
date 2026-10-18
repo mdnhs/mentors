@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { Suspense } from "react"
 
 import { LoginForm } from "@/components/auth/login-form"
 import { LogoMark } from "@/components/site/logo"
@@ -15,7 +16,9 @@ export default function LoginPage() {
       <LogoMark className="size-10" />
       <h1 className="mt-6 text-heading">Welcome back</h1>
       <p className="mt-1 text-muted-foreground">Log in to manage your sessions on {site.name}.</p>
-      <LoginForm />
+      <Suspense>
+        <LoginForm />
+      </Suspense>
       <p className="mt-8 text-center text-sm text-muted-foreground">
         New here?{" "}
         <Link href="/mentors" className="link">

@@ -25,6 +25,14 @@ export function eligibleReviews(list: Review[], bookings: ReviewedBooking[]) {
 
 const publishedReviews = eligibleReviews(reviews, [...reviewedBookings, ...demoBookings])
 
+export function getAllReviews() {
+  return publishedReviews
+}
+
+export function getReviewById(id: string) {
+  return publishedReviews.find((review) => review.id === id)
+}
+
 export function getReviews(slug: string) {
   return publishedReviews
     .filter((review) => review.mentorSlug === slug)
@@ -64,11 +72,4 @@ export function getSession(id: string) {
 
 export function getMentorSessions(slug: string) {
   return getSessions().filter((session) => session.mentorSlug === slug)
-}
-
-export const SERVICE_FEE_RATE = 0.05
-
-export function priceBreakdown(price: number) {
-  const fee = Math.round(price * SERVICE_FEE_RATE)
-  return { price, fee, total: price + fee }
 }

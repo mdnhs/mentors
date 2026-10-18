@@ -18,7 +18,7 @@ export const mentors: Mentor[] = [
     skills: ["System design", "Distributed systems", "Go", "Java", "Technical interviews"],
     education: "BSc in Computer Science, Dhaka",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: true },
+    verification: { identity: true, education: true, employment: true, expertise: true, mentoring: false },
     bio: "I started at a Dhaka startup and now build payment infrastructure in Singapore. I help engineers prepare for system design rounds and plan a move abroad.",
     highlights: [
       "Builds high-traffic payment systems",
@@ -74,7 +74,14 @@ export const mentors: Mentor[] = [
         sessionId: "system-design-essentials",
       },
     ],
-    availability: { days: [2, 4, 6], times: ["18:00", "19:00", "20:00"] },
+    availability: {
+      days: [2, 4, 6],
+      times: ["20:00", "21:00", "22:00"],
+      unavailableDates: ["2026-10-27"],
+      bufferMinutes: 15,
+      minNoticeHours: 24,
+      maxAdvanceDays: 45,
+    },
   },
   {
     slug: "nusrat-jahan",
@@ -91,7 +98,7 @@ export const mentors: Mentor[] = [
     skills: ["Python", "PyTorch", "NLP", "Bangla NLP", "MLOps"],
     education: "BSc in CSE, Dhaka",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: true },
+    verification: { identity: true, education: true, employment: true, expertise: true, mentoring: false },
     bio: "I build language models for Bangla text. I help students and developers find a practical, project-first path into AI careers.",
     highlights: [
       "Ships NLP models used in production",
@@ -147,7 +154,7 @@ export const mentors: Mentor[] = [
         sessionId: "starting-your-ai-career",
       },
     ],
-    availability: { days: [0, 1, 3], times: ["19:00", "20:00", "21:00"] },
+    availability: { days: [0, 1, 3], times: ["19:00", "20:00", "21:00"], minNoticeHours: 6, unavailableDates: ["2026-10-26"] },
   },
   {
     slug: "arif-hossain",
@@ -164,7 +171,7 @@ export const mentors: Mentor[] = [
     skills: ["PhD applications", "Research proposals", "Supervisor outreach", "Computer vision", "Academic CV"],
     education: "MSc in Computer Science, Germany",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: true },
+    verification: { identity: true, education: true, employment: true, expertise: false, mentoring: false },
     bio: "I left a lecturer role in Bangladesh to start a fully funded PhD in Germany. I help with research proposals, supervisor outreach and funding options.",
     highlights: [
       "Fully funded PhD position in Germany",
@@ -212,7 +219,7 @@ export const mentors: Mentor[] = [
         deliveryDays: 3,
       },
     ],
-    availability: { days: [5, 6, 0], times: ["15:00", "16:00", "17:00"] },
+    availability: { days: [5, 6, 0], times: ["10:00", "11:00", "12:00"], bufferMinutes: 15 },
   },
   {
     slug: "sadia-islam",
@@ -229,7 +236,7 @@ export const mentors: Mentor[] = [
     skills: ["Product design", "Portfolio review", "UX research", "Design interviews", "Figma"],
     education: "BArch, Dhaka",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: true },
+    verification: { identity: true, education: true, employment: true, expertise: false, mentoring: false },
     bio: "From agency work in Dhaka to product design in Canada. I help designers sharpen portfolios and prepare for interviews abroad.",
     highlights: [
       "Leads design for a consumer finance app",
@@ -273,7 +280,7 @@ export const mentors: Mentor[] = [
         deliveryDays: 4,
       },
     ],
-    availability: { days: [6, 0], times: ["07:00", "08:00", "09:00"] },
+    availability: { days: [6, 0], times: ["09:00", "10:00", "11:00"] },
   },
   {
     slug: "farhan-kabir",
@@ -290,7 +297,7 @@ export const mentors: Mentor[] = [
     skills: ["Data structures", "Algorithms", "Coding interviews", "TypeScript", "Backend"],
     education: "BSc in CSE, Chattogram",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: true },
+    verification: { identity: true, education: true, employment: true, expertise: false, mentoring: false },
     bio: "I sit on interview panels for software engineers. Book me for realistic mock interviews with honest, actionable feedback.",
     highlights: [
       "Regular interviewer for engineering roles",
@@ -346,7 +353,7 @@ export const mentors: Mentor[] = [
         sessionsPerMonth: 2,
       },
     ],
-    availability: { days: [1, 3, 5], times: ["21:00", "22:00"] },
+    availability: { days: [1, 3, 5], times: ["18:00", "19:00"] },
   },
   {
     slug: "maliha-chowdhury",
@@ -363,7 +370,7 @@ export const mentors: Mentor[] = [
     skills: ["Node.js", "PostgreSQL", "CV review", "Internships", "First job"],
     education: "BSc in CSE, Sylhet",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: false },
+    verification: { identity: true, education: false, employment: false, expertise: false, mentoring: false },
     bio: "I help CSE students land their first internship or junior role in Bangladesh's tech industry, starting with a CV that gets replies.",
     highlights: [
       "Screens intern CVs for her team",
@@ -424,7 +431,7 @@ export const mentors: Mentor[] = [
     skills: ["Research writing", "Publishing", "PhD funding", "Statistics", "Scholarship essays"],
     education: "PhD in Public Health, Sweden",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: true },
+    verification: { identity: true, education: true, employment: true, expertise: false, mentoring: false },
     bio: "I completed my PhD in Sweden after a master's on scholarship. I help early researchers write proposals and apply for funded positions.",
     highlights: [
       "Master's and PhD both fully funded",
@@ -468,7 +475,7 @@ export const mentors: Mentor[] = [
         sessionId: "research-proposal-workshop",
       },
     ],
-    availability: { days: [6, 0], times: ["14:00", "15:00", "16:00"] },
+    availability: { days: [6, 0], times: ["10:00", "11:00", "12:00"] },
   },
   {
     slug: "imran-hasan",
@@ -485,7 +492,7 @@ export const mentors: Mentor[] = [
     skills: ["Scholarship applications", "Statement of purpose", "Study in Japan", "IELTS", "Embassy interviews"],
     education: "BSc in EEE, Rajshahi",
     languages: ["Bangla", "English", "Japanese"],
-    verification: { identity: true, experience: true },
+    verification: { identity: true, education: true, employment: true, expertise: false, mentoring: false },
     bio: "I won a government scholarship to study AI in Japan. I'll walk you through each step, from documents to the interview.",
     highlights: [
       "Fully funded master's in Japan",
@@ -529,7 +536,7 @@ export const mentors: Mentor[] = [
         sessionId: "funded-masters-programs",
       },
     ],
-    availability: { days: [5, 6], times: ["17:00", "18:00", "19:00"] },
+    availability: { days: [5, 6], times: ["20:00", "21:00", "22:00"] },
   },
   {
     slug: "shafiq-uddin",
@@ -546,7 +553,7 @@ export const mentors: Mentor[] = [
     skills: ["React", "Next.js", "Remote work", "Portfolio", "Freelancing"],
     education: "BSc in CSE, Khulna",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: false },
+    verification: { identity: true, education: false, employment: false, expertise: false, mentoring: false },
     bio: "I work remotely for a US startup from Dhaka. I help developers build a portfolio that wins remote roles.",
     highlights: [
       "Full-time remote engineer since 2022",
@@ -609,7 +616,7 @@ export const mentors: Mentor[] = [
     skills: ["Data science", "SQL", "Machine learning", "Case interviews", "Career switch"],
     education: "MSc in Data Science, Australia",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: true },
+    verification: { identity: true, education: true, employment: true, expertise: false, mentoring: false },
     bio: "I switched from banking in Dhaka to data science in Sydney. I help analysts and engineers make the same move.",
     highlights: [
       "Leads forecasting models for retail",
@@ -652,7 +659,7 @@ export const mentors: Mentor[] = [
         sessionId: "sql-analytics-interview-prep",
       },
     ],
-    availability: { days: [5, 6], times: ["10:00", "11:00"] },
+    availability: { days: [5, 6], times: ["15:00", "16:00"] },
   },
   {
     slug: "sabbir-alam",
@@ -669,7 +676,7 @@ export const mentors: Mentor[] = [
     skills: ["US admissions", "GRE", "Assistantships", "Professor emails", "Statement of purpose"],
     education: "BSc in CSE, Dhaka",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: false },
+    verification: { identity: true, education: false, employment: false, expertise: false, mentoring: false },
     bio: "I got into a funded US master's last year. I share exactly what worked, from shortlisting to emailing professors.",
     highlights: [
       "Admitted with a teaching assistantship",
@@ -725,7 +732,7 @@ export const mentors: Mentor[] = [
         sessionId: "us-admissions-funding",
       },
     ],
-    availability: { days: [0, 6], times: ["08:00", "09:00", "10:00"] },
+    availability: { days: [0, 6], times: ["09:00", "10:00", "11:00"] },
   },
   {
     slug: "tahmina-sultana",
@@ -741,7 +748,7 @@ export const mentors: Mentor[] = [
     skills: ["Scholarship applications", "Research methods", "Development economics"],
     education: "MSc in Development Economics, UK",
     languages: ["Bangla", "English"],
-    verification: { identity: true, experience: false },
+    verification: { identity: true, education: false, employment: false, expertise: false, mentoring: false },
     bio: "I studied in the UK on a full scholarship and now teach economics in Dhaka. I'm on a teaching break this term and will reopen bookings soon.",
     highlights: ["Completed a fully funded master's in the UK"],
     offers: [

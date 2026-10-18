@@ -18,10 +18,12 @@ export default defineConfig({
     { name: "desktop", testMatch: "e2e/**/*.spec.ts", use: { ...devices["Desktop Chrome"], channel: "chrome" } },
     { name: "mobile", testMatch: "e2e/**/*.spec.ts", use: { ...devices["Pixel 7"], channel: "chrome" } },
   ],
-  webServer: {
-    command: `npm run build && npm run start -- -p ${port}`,
-    url: `http://localhost:${port}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 240_000,
-  },
+  webServer: process.env.UNIT_ONLY
+    ? undefined
+    : {
+        command: `npm run build && npm run start -- -p ${port}`,
+        url: `http://localhost:${port}`,
+        reuseExistingServer: !process.env.CI,
+        timeout: 240_000,
+      },
 })

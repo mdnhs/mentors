@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "playwright test",
-    "test:unit": "playwright test --project=unit"
+    "test:unit": "UNIT_ONLY=1 playwright test --project=unit"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

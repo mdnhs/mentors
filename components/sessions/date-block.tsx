@@ -1,8 +1,8 @@
-import { formatDateParts } from "@/lib/format"
+import { DHAKA_TZ, formatDateParts } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-export function DateBlock({ iso, className }: { iso: string; className?: string }) {
-  const { weekday, month, day } = formatDateParts(iso)
+export function DateBlock({ iso, timeZone = DHAKA_TZ, className }: { iso: string; timeZone?: string; className?: string }) {
+  const { weekday, month, day } = formatDateParts(iso, timeZone)
 
   return (
     <div

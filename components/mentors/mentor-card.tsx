@@ -8,6 +8,7 @@ import { availabilityLabel, getLocation } from "@/lib/data"
 import { formatPrice } from "@/lib/format"
 import { getStartingPrice } from "@/lib/offers"
 import type { Mentor } from "@/lib/types"
+import { hasCoreChecks } from "@/lib/verification"
 import { cn } from "@/lib/utils"
 
 type MentorCardProps = {
@@ -21,7 +22,7 @@ type MentorCardProps = {
 }
 
 export function MentorCard({ mentor, priority, price, layout = "responsive", className }: MentorCardProps) {
-  const isVerified = mentor.verification.identity && mentor.verification.experience
+  const isVerified = hasCoreChecks(mentor.verification)
   const responsive = layout === "responsive"
   const skills = mentor.skills.slice(0, 2)
 
@@ -57,7 +58,7 @@ export function MentorCard({ mentor, priority, price, layout = "responsive", cla
         <div className="flex items-start justify-between gap-2">
           <h3 className="flex min-w-0 items-center gap-1 text-base font-semibold">
             <span className="truncate">{mentor.name}</span>
-            {isVerified && <BadgeCheckIcon className="size-4 shrink-0 text-primary" aria-label="Verified mentor" />}
+            {isVerified && <BadgeCheckIcon className="size-4 shrink-0 text-primary" aria-label="ID and credentials checked" />}
           </h3>
           {responsive && <SaveButton slug={mentor.slug} name={mentor.name} className="-mt-1.5 -mr-1.5 size-9 shadow-none sm:hidden" />}
           <Rating slug={mentor.slug} className={cn("shrink-0", responsive && "hidden sm:inline-flex")} />

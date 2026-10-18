@@ -1,0 +1,223 @@
+"use client"
+
+import { useState } from "react"
+import { BanIcon, PauseIcon, PlayIcon, RotateCcwIcon } from "lucide-react"
+
+import { DataTable, type Column } from "@/components/admin/data-table"
+import { AdminPageHeader, DemoNotice, Feedback, ReasonPanel, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { useAdminSource } from "@/components/admin/use-admin"
+import { Button } from "@/components/ui/button"
+import { usePrincipal } from "@/lib/auth"
+import { adminMentorRows, adminOfferRows, type AdminMentorRow, type AdminOfferRow } from "@/lib/admin-selectors"
+import { getCategory, offerTypeLabels } from "@/lib/categories"
+import { formatPrice } from "@/lib/format"
+import { adminModerateMentor, adminModerateOffer } from "@/lib/store"
+
+type Pending = { kind: "mentor" | "offer"; id: string; label: string } | null
+
+export function MentorModeration() {
+  const source = useAdminSource()
+  const principal = usePrincipal()
+  const [pending, setPending] = useState<Pending>(null)
+  const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
+
+  const mentorRows = adminMentorRows(source)
+  const offerRows = adminOfferRows(source)
+
+  const run = (result: { ok: boolean; message?: string }, success: string) => {
+    setFeedback(result.ok ? { tone: "ok", text: success } : { tone: "error", text: result.message ?? "That didn't work." })
+    if (result.ok) setPending(null)
+  }
+
+  const mentorColumns: Column<AdminMentorRow>[] = [
+    {
+      id: "name",
+      header: "Mentor",
+      sortValue: (row) => row.mentor.name,
+      cell: (row) => (
+        <div>
+          <p className="font-medium">{row.mentor.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {row.mentor.role} · {row.mentor.city}, {row.mentor.country}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "areas",
+      header: "Areas",
+      secondary: true,
+      cell: (row) => <span className="text-muted-foreground">{row.mentor.categories.map((id) => getCategory(id).label).join(", ")}</span>,
+    },
+    {
+      id: "offers",
+      header: "Offers",
+      align: "right",
+      sortValue: (row) => row.mentor.offers.length,
+      cell: (row) => <span className="tabular-nums">{row.mentor.offers.length}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortValue: (row) => row.status,
+      cell: (row) => (
+        <div className="space-y-1">
+          <StatusBadge tone={moderationTone(row.status)}>{row.status === "suspended" ? "Suspended" : "Active"}</StatusBadge>
+          {row.moderation?.reason && <p className="max-w-56 text-xs text-muted-foreground">{row.moderation.reason}</p>}
+        </div>
+      ),
+    },
+    {
+      id: "action",
+      header: "Action",
+      cell: (row) =>
+        row.status === "suspended" ? (
+          <Button variant="outline" size="sm" onClick={() => run(adminModerateMentor(principal, row.mentor.slug, "active"), `${row.mentor.name} restored.`)}>
+            <RotateCcwIcon aria-hidden="true" />
+            Restore
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setPending({ kind: "mentor", id: row.mentor.slug, label: row.mentor.name })}>
+            <BanIcon aria-hidden="true" />
+            Suspend
+          </Button>
+        ),
+    },
+  ]
+
+  const offerColumns: Column<AdminOfferRow>[] = [
+    {
+      id: "title",
+      header: "Offer",
+      sortValue: (row) => row.offer.title,
+      cell: (row) => (
+        <div>
+          <p className="font-medium">{row.offer.title}</p>
+          <p className="text-xs text-muted-foreground">{offerTypeLabels[row.offer.type]}</p>
+        </div>
+      ),
+    },
+    { id: "mentor", header: "Mentor", secondary: true, sortValue: (row) => row.mentor?.name ?? "", cell: (row) => <span className="text-muted-foreground">{row.mentor?.name ?? "—"}</span> },
+    { id: "price", header: "Price", align: "right", sortValue: (row) => row.offer.price, cell: (row) => <span className="tabular-nums">{formatPrice(row.offer.price)}</span> },
+    { id: "catalogue", header: "Catalogue", secondary: true, cell: (row) => <StatusBadge tone={moderationTone(row.offer.status)}>{row.offer.status}</StatusBadge> },
+    {
+      id: "moderation",
+      header: "Moderation",
+      sortValue: (row) => row.status,
+      cell: (row) => (
+        <div className="space-y-1">
+          <StatusBadge tone={row.status === "paused" ? "warning" : "success"}>{row.status === "paused" ? "Paused" : "Live"}</StatusBadge>
+          {row.moderation?.reason && <p className="max-w-56 text-xs text-muted-foreground">{row.moderation.reason}</p>}
+        </div>
+      ),
+    },
+    {
+      id: "action",
+      header: "Action",
+      cell: (row) =>
+        row.status === "paused" ? (
+          <Button variant="outline" size="sm" onClick={() => run(adminModerateOffer(principal, row.offer.id, "live"), `“${row.offer.title}” restored.`)}>
+            <PlayIcon aria-hidden="true" />
+            Restore
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setPending({ kind: "offer", id: row.offer.id, label: row.offer.title })}>
+            <PauseIcon aria-hidden="true" />
+            Pause
+          </Button>
+        ),
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <AdminPageHeader title="Mentors & offers" description="Suspend a mentor or pause an offer. The decision is recorded with a reason; nothing is deleted." />
+      <DemoNotice>Moderation is recorded in this browser’s audit log. It does not change the public catalogue in this demo, which reads static data.</DemoNotice>
+
+      <section aria-labelledby="mentor-table">
+        <h2 id="mentor-table" className="text-subheading">
+          Mentors
+        </h2>
+        <div className="mt-3">
+          <DataTable
+            rows={mentorRows}
+            columns={mentorColumns}
+            rowKey={(row) => row.mentor.slug}
+            search={(row) => `${row.mentor.name} ${row.mentor.role} ${row.mentor.city} ${row.mentor.skills.join(" ")}`}
+            searchPlaceholder="Search mentors…"
+            searchLabel="Search mentors"
+            initialSort={{ columnId: "name", direction: "asc" }}
+            filters={[
+              {
+                id: "status",
+                label: "Status",
+                options: [
+                  { id: "active", label: "Active", match: (row) => row.status === "active" },
+                  { id: "suspended", label: "Suspended", match: (row) => row.status === "suspended" },
+                ],
+              },
+            ]}
+          />
+        </div>
+      </section>
+
+      <section aria-labelledby="offer-table">
+        <h2 id="offer-table" className="text-subheading">
+          Offers
+        </h2>
+        <div className="mt-3">
+          <DataTable
+            rows={offerRows}
+            columns={offerColumns}
+            rowKey={(row) => row.offer.id}
+            search={(row) => `${row.offer.title} ${row.mentor?.name ?? ""}`}
+            searchPlaceholder="Search offers…"
+            searchLabel="Search offers"
+            pageSize={8}
+            filters={[
+              {
+                id: "moderation",
+                label: "Moderation",
+                options: [
+                  { id: "live", label: "Live", match: (row) => row.status === "live" },
+                  { id: "paused", label: "Paused", match: (row) => row.status === "paused" },
+                ],
+              },
+              {
+                id: "status",
+                label: "Catalogue",
+                options: [
+                  { id: "published", label: "Published", match: (row) => row.offer.status === "published" },
+                  { id: "other", label: "Draft / paused", match: (row) => row.offer.status !== "published" },
+                ],
+              },
+            ]}
+          />
+        </div>
+      </section>
+
+      {pending && (
+        <ReasonPanel
+          title={pending.kind === "mentor" ? `Suspend ${pending.label}` : `Pause “${pending.label}”`}
+          description={pending.kind === "mentor" ? "The mentor keeps their record; the reason is logged." : "The offer keeps its details; the reason is logged."}
+          label="Reason"
+          placeholder="e.g. Repeated no-shows reported by learners"
+          submitLabel={pending.kind === "mentor" ? "Suspend mentor" : "Pause offer"}
+          destructive
+          onSubmit={(reason) =>
+            pending.kind === "mentor"
+              ? run(adminModerateMentor(principal, pending.id, "suspended", reason), `${pending.label} suspended.`)
+              : run(adminModerateOffer(principal, pending.id, "paused", reason), `“${pending.label}” paused.`)
+          }
+          onCancel={() => setPending(null)}
+        />
+      )}
+
+      {feedback && <Feedback tone={feedback.tone}>{feedback.text}</Feedback>}
+
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <SampleBadge /> marks demo records. Every action is re-checked in the domain layer, not only hidden here.
+      </p>
+    </div>
+  )
+}

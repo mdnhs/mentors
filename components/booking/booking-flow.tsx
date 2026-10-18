@@ -2,20 +2,23 @@
 
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { useState } from "react"
-import { CalendarDaysIcon, CalendarOffIcon, CheckIcon, CircleAlertIcon, ClockIcon, Loader2Icon, UploadIcon } from "lucide-react"
+import { useRef, useState } from "react"
+import { CalendarDaysIcon, CalendarOffIcon, CheckIcon, CircleAlertIcon, ClockIcon, Loader2Icon, PencilIcon, UploadIcon } from "lucide-react"
 
+import { BookingSuccess } from "@/components/booking/booking-success"
+import { RescheduleFlow } from "@/components/booking/reschedule-flow"
+import { SchedulePicker } from "@/components/booking/schedule-picker"
 import {
   ContactFields,
   DemoNotice,
+  DemoResultPicker,
   isValidContact,
   PaymentMethodPicker,
   PriceBreakdown,
   type Contact,
   type PaymentMethod,
 } from "@/components/checkout/checkout-parts"
-import { BookingSuccess } from "@/components/booking/booking-success"
-import { FilterSelect } from "@/components/filters/filter-select"
+import { PaymentStatus } from "@/components/checkout/payment-status"
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { offerIcons, offerMeta } from "@/components/mentors/offer-meta"
 import { EmptyState } from "@/components/site/empty-state"
@@ -25,20 +28,26 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { offerTypeLabels } from "@/lib/categories"
-import { getMentor, priceBreakdown } from "@/lib/data"
-import { DHAKA_TZ, formatDate, formatDateParts, formatPrice, formatTime, timezoneLabel } from "@/lib/format"
+import { formatDate, formatPrice, formatTime } from "@/lib/format"
 import { cancellationTerms, getBookableOffers, resolveRequestedOffer, type RequestedOffer } from "@/lib/offers"
+import { payForOrder, type DemoResult } from "@/lib/payment-client"
+import { startCheckout, type PaymentOutcome } from "@/lib/payment-service"
+import { quote } from "@/lib/pricing"
 import { site } from "@/lib/site"
-import { daysFromNow, slotIso, upcomingDays } from "@/lib/slots"
-import { addBooking, createBookingId, useIsClient } from "@/lib/store"
-import type { Booking, Mentor, Offer, ReviewOffer } from "@/lib/types"
+import { createBookingId, createOrderId, transact, useAppState, useIsClient, useManagedMentor } from "@/lib/store"
+import type { Mentor, Offer, ReviewOffer } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-type Step = "offer" | "schedule" | "checkout"
+type Step = "offer" | "schedule" | "goals" | "review"
+
+const MIN_GOALS = 10
 
 export function BookingFlow({ slug }: { slug: string }) {
   const searchParams = useSearchParams()
-  const mentor = getMentor(slug)!
+  const mentor = useManagedMentor(slug)!
+  const rescheduleId = searchParams.get("reschedule")
+  if (rescheduleId) return <RescheduleFlow mentor={mentor} bookingId={rescheduleId} />
+
   const now = new Date()
   const requested = resolveRequestedOffer(mentor, searchParams.get("offer"), now)
   const offers = getBookableOffers(mentor, now).filter((offer) => offer.type !== "group")
@@ -51,35 +60,49 @@ type FlowProps = { mentor: Mentor; offers: Offer[]; initialOffer?: Offer; reques
 
 function Flow({ mentor, offers, initialOffer, requested }: FlowProps) {
   const isClient = useIsClient()
+  const { bookings, orders } = useAppState()
   const firstName = mentor.name.split(" ")[0]
 
+  const [now] = useState(() => new Date())
   const [step, setStep] = useState<Step>(initialOffer ? "schedule" : "offer")
   const [offerId, setOfferId] = useState(initialOffer?.id ?? offers[0].id)
-  const [day, setDay] = useState<string | null>(null)
-  const [time, setTime] = useState<string | null>(null)
-  const [timezone, setTimezone] = useState(DHAKA_TZ)
+  const [slot, setSlot] = useState<string | null>(null)
+  const [timezone, setTimezone] = useState<string | null>(null)
   const [note, setNote] = useState("")
   const [documentLink, setDocumentLink] = useState("")
   const [contact, setContact] = useState<Contact>({ name: site.learner.name, email: site.learner.email })
   const [payment, setPayment] = useState<PaymentMethod>("bkash")
   const [submitting, setSubmitting] = useState(false)
-  const [booking, setBooking] = useState<Booking | null>(null)
+  const [demoResult, setDemoResult] = useState<DemoResult>("success")
+  const [failure, setFailure] = useState<Extract<PaymentOutcome, { ok: false }> | null>(null)
+  const [orderId, setOrderId] = useState<string | null>(null)
+  const inFlight = useRef(false)
+  const requestId = useRef(createBookingId())
 
   const offer = offers.find((item) => item.id === offerId) ?? offers[0]
   const isReview = offer.type === "review"
-  const slot = day && time ? slotIso(day, time) : null
+  const learnerTimezone = timezone ?? (isClient ? Intl.DateTimeFormat().resolvedOptions().timeZone : "Asia/Dhaka")
 
-  const steps: { id: Step; label: string }[] = [
-    { id: "offer", label: "Session" },
-    { id: "schedule", label: isReview ? "Details" : "Date & time" },
-    { id: "checkout", label: "Checkout" },
-  ]
+  const steps: { id: Step; label: string }[] = isReview
+    ? [
+        { id: "offer", label: "Session" },
+        { id: "schedule", label: "Details" },
+        { id: "review", label: "Review" },
+      ]
+    : [
+        { id: "offer", label: "Session" },
+        { id: "schedule", label: "Date & time" },
+        { id: "goals", label: "Goals" },
+        { id: "review", label: "Review" },
+      ]
   const stepIndex = steps.findIndex((item) => item.id === step)
 
+  const goalsReady = note.trim().length >= MIN_GOALS
   const canContinue =
     step === "offer" ||
-    (step === "schedule" && (isReview ? note.trim().length >= 10 : Boolean(slot))) ||
-    (step === "checkout" && isValidContact(contact))
+    (step === "schedule" && (isReview ? goalsReady : Boolean(slot))) ||
+    (step === "goals" && goalsReady) ||
+    (step === "review" && isValidContact(contact))
 
   const goTo = (next: Step) => {
     setStep(next)
@@ -87,37 +110,73 @@ function Flow({ mentor, offers, initialOffer, requested }: FlowProps) {
   }
 
   const confirm = async () => {
+    if (inFlight.current) return
+    inFlight.current = true
     setSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 1200))
-    const created: Booking = {
-      id: createBookingId(),
-      kind: offer.type,
-      mentorSlug: mentor.slug,
-      offerId: offer.id,
-      title: offer.title,
-      date: offer.type === "review" ? daysFromNow(offer.deliveryDays) : slot!,
-      durationMinutes: offer.type === "review" ? undefined : offer.durationMinutes,
-      timezone,
-      total: priceBreakdown(offer.price).total,
-      status: isReview ? "in-review" : "upcoming",
-      note: note.trim() || undefined,
+    setFailure(null)
+    const notes = [note.trim(), documentLink.trim() && `Document: ${documentLink.trim()}`].filter(Boolean).join("\n")
+    const outcome = await transact((current) =>
+      startCheckout(
+        current,
+        {
+          requestId: requestId.current,
+          bookingId: createBookingId(),
+          orderId: createOrderId(),
+          method: payment,
+          mentor,
+          offer,
+          startsAt: slot ?? undefined,
+          timezone: learnerTimezone,
+          note: notes || undefined,
+        },
+        new Date()
+      )
+    )
+    if (outcome.ok) {
+      setOrderId(outcome.order.id)
+      window.scrollTo({ top: 0 })
+      await payForOrder(outcome.order.id, payment, demoResult)
+    } else {
+      setFailure(outcome)
+      if (outcome.code !== "offer-unavailable") setSlot(null)
     }
-    addBooking(created)
-    setBooking(created)
+    inFlight.current = false
     setSubmitting(false)
-    window.scrollTo({ top: 0 })
+  }
+
+  const restart = () => {
+    requestId.current = createBookingId()
+    setOrderId(null)
+    setSlot(null)
+    setFailure(null)
+    goTo("schedule")
   }
 
   const handleNext = () => {
     if (step === "offer") goTo("schedule")
-    else if (step === "schedule") goTo("checkout")
+    else if (step === "schedule") goTo(isReview ? "review" : "goals")
+    else if (step === "goals") goTo("review")
     else confirm()
   }
 
-  if (booking) return <BookingSuccess booking={booking} mentor={mentor} />
+  const previous = (): Step | null => {
+    const index = steps.findIndex((item) => item.id === step)
+    return index > 0 ? steps[index - 1].id : null
+  }
 
-  const nextLabel =
-    step === "checkout" ? `Confirm · ${formatPrice(priceBreakdown(offer.price).total)}` : "Continue"
+  const order = orderId ? orders.find((item) => item.id === orderId) : undefined
+  const booking = order && bookings.find((item) => item.id === order.bookingId)
+  if (order?.status === "confirmed" && booking) return <BookingSuccess booking={booking} mentor={mentor} order={order} />
+  if (order) {
+    return (
+      <div className="mx-auto mt-4 max-w-lg surface p-4 shadow-card sm:p-6">
+        <PaymentStatus order={order} onRestart={restart} />
+      </div>
+    )
+  }
+
+  const nextLabel = step === "review" ? `Pay ${formatPrice(quote(offer.price).total)}` : "Continue"
+  const back = previous()
 
   return (
     <>
@@ -134,7 +193,7 @@ function Flow({ mentor, offers, initialOffer, requested }: FlowProps) {
                   {index > 0 && <span className="h-px w-4 bg-border sm:w-8" aria-hidden="true" />}
                   <button
                     type="button"
-                    disabled={!done}
+                    disabled={!done || submitting}
                     onClick={() => goTo(item.id)}
                     aria-current={current ? "step" : undefined}
                     className="flex items-center gap-2 rounded-md px-2 py-2 focus-ring disabled:cursor-default"
@@ -160,28 +219,35 @@ function Flow({ mentor, offers, initialOffer, requested }: FlowProps) {
 
           {step === "offer" && <RequestNotice requested={requested} firstName={firstName} />}
 
-          <MobileSummary mentor={mentor} offer={offer} className="mt-5 lg:hidden" />
+          <MobileSummary mentor={mentor} offer={offer} slot={slot} timezone={learnerTimezone} className="mt-5 lg:hidden" />
 
           <div className="mt-5 surface p-4 shadow-card sm:p-6">
             {step === "offer" && (
-              <OfferStep offers={offers} value={offer.id} onChange={setOfferId} mentor={mentor} />
+              <OfferStep
+                offers={offers}
+                value={offer.id}
+                onChange={(id) => {
+                  setOfferId(id)
+                  setSlot(null)
+                }}
+                mentor={mentor}
+              />
             )}
 
-            {step === "schedule" && !isReview && (
-              <ScheduleStep
+            {step === "schedule" && !isReview && !isClient && <ScheduleSkeleton />}
+            {step === "schedule" && !isReview && isClient && "durationMinutes" in offer && (
+              <SchedulePicker
                 mentor={mentor}
-                isClient={isClient}
-                day={day}
-                time={time}
-                timezone={timezone}
-                note={note}
-                onDay={(value) => {
-                  setDay(value)
-                  setTime(null)
-                }}
-                onTime={setTime}
+                durationMinutes={offer.durationMinutes}
+                bookings={bookings}
+                now={now}
+                timezone={learnerTimezone}
                 onTimezone={setTimezone}
-                onNote={setNote}
+                value={slot}
+                onChange={(next) => {
+                  setSlot(next)
+                  setFailure(null)
+                }}
               />
             )}
 
@@ -196,51 +262,181 @@ function Flow({ mentor, offers, initialOffer, requested }: FlowProps) {
               />
             )}
 
-            {step === "checkout" && (
-              <div className="space-y-6">
-                <h2 className="text-subheading">Checkout</h2>
-                <DemoNotice />
-                <ContactFields value={contact} onChange={setContact} />
-                <PaymentMethodPicker value={payment} onChange={setPayment} />
-                <PriceBreakdown price={offer.price} label={offer.title} className="rounded-xl bg-muted/60 p-4 lg:hidden" />
-                <p className="text-sm text-muted-foreground lg:hidden">{cancellationTerms[offer.cancellation]}</p>
-              </div>
+            {step === "goals" && <GoalsStep firstName={firstName} note={note} onNote={setNote} />}
+
+            {step === "review" && (
+              <ReviewStep
+                mentor={mentor}
+                offer={offer}
+                slot={slot}
+                timezone={learnerTimezone}
+                note={note}
+                contact={contact}
+                payment={payment}
+                demoResult={demoResult}
+                failure={failure}
+                onContact={setContact}
+                onPayment={setPayment}
+                onDemoResult={setDemoResult}
+                onEdit={goTo}
+                onPickAnother={() => goTo("schedule")}
+              />
             )}
           </div>
 
           <div className="mt-4 hidden items-center justify-between sm:flex">
-            <StepBack step={step} onBack={goTo} />
+            <StepBack back={back} onBack={goTo} disabled={submitting} />
             <Button onClick={handleNext} disabled={!canContinue || submitting} size="lg" className="min-w-40">
               {submitting ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-              {submitting ? "Confirming…" : nextLabel}
+              {submitting ? "Processing…" : nextLabel}
             </Button>
           </div>
         </div>
 
         <aside className="hidden lg:block">
           <div className="sticky top-24">
-            <Summary mentor={mentor} offer={offer} slot={slot} timezone={timezone} />
+            <Summary mentor={mentor} offer={offer} slot={slot} timezone={learnerTimezone} />
           </div>
         </aside>
       </div>
 
       <div data-mobile-bar className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t bg-card/95 px-4 py-3 backdrop-blur sm:hidden">
-        <StepBack step={step} onBack={goTo} />
+        <StepBack back={back} onBack={goTo} disabled={submitting} />
         <Button onClick={handleNext} disabled={!canContinue || submitting} size="lg" className="flex-1">
           {submitting ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-          {submitting ? "Confirming…" : nextLabel}
+          {submitting ? "Processing…" : nextLabel}
         </Button>
       </div>
     </>
   )
 }
 
-function StepBack({ step, onBack }: { step: Step; onBack: (step: Step) => void }) {
-  if (step === "offer") return <span />
+function StepBack({ back, onBack, disabled }: { back: Step | null; onBack: (step: Step) => void; disabled: boolean }) {
+  if (!back) return <span />
   return (
-    <Button variant="ghost" size="lg" onClick={() => onBack(step === "checkout" ? "schedule" : "offer")}>
+    <Button variant="ghost" size="lg" disabled={disabled} onClick={() => onBack(back)}>
       Back
     </Button>
+  )
+}
+
+function ScheduleSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading available times">
+      <Skeleton className="h-6 w-40" />
+      <Skeleton className="mt-4 h-72 rounded-xl" />
+    </div>
+  )
+}
+
+function GoalsStep({ firstName, note, onNote }: { firstName: string; note: string; onNote: (value: string) => void }) {
+  const remaining = Math.max(MIN_GOALS - note.trim().length, 0)
+
+  return (
+    <div className="grid gap-1.5">
+      <h2 className="text-subheading" id="goals-heading">
+        What do you want from this session?
+      </h2>
+      <Label htmlFor="session-goals" className="mt-3">
+        Your goals
+      </Label>
+      <Textarea
+        id="session-goals"
+        rows={5}
+        value={note}
+        onChange={(event) => onNote(event.target.value)}
+        placeholder={`Share your background and what you'd like ${firstName} to help with, so the session starts fast.`}
+        aria-describedby="session-goals-hint"
+        className="bg-card"
+      />
+      <p id="session-goals-hint" className="text-xs text-muted-foreground">
+        {remaining > 0 ? `${remaining} more characters needed` : "Looks good"}
+      </p>
+    </div>
+  )
+}
+
+type ReviewStepProps = {
+  mentor: Mentor
+  offer: Offer
+  slot: string | null
+  timezone: string
+  note: string
+  contact: Contact
+  payment: PaymentMethod
+  demoResult: DemoResult
+  failure: Extract<PaymentOutcome, { ok: false }> | null
+  onContact: (value: Contact) => void
+  onPayment: (value: PaymentMethod) => void
+  onDemoResult: (value: DemoResult) => void
+  onEdit: (step: Step) => void
+  onPickAnother: () => void
+}
+
+function ReviewStep({ mentor, offer, slot, timezone, note, contact, payment, demoResult, failure, onContact, onPayment, onDemoResult, onEdit, onPickAnother }: ReviewStepProps) {
+  const firstName = mentor.name.split(" ")[0]
+  const isReview = offer.type === "review"
+  const end = slot && "durationMinutes" in offer ? new Date(new Date(slot).getTime() + offer.durationMinutes * 60_000) : null
+
+  const rows = [
+    { label: "Session", value: `${offer.title} · ${offerMeta(offer)}`, edit: "offer" as const },
+    slot && end
+      ? {
+          label: "When",
+          value: `${formatDate(slot, timezone)}, ${formatTime(slot, timezone)} – ${formatTime(end, timezone)}`,
+          detail: mentor.timezone !== timezone ? `${formatTime(slot, mentor.timezone)} for ${firstName} in ${mentor.city}` : undefined,
+          edit: "schedule" as const,
+        }
+      : null,
+    { label: "Goals", value: note.trim(), edit: (isReview ? "schedule" : "goals") as Step },
+  ].filter(Boolean) as { label: string; value: string; detail?: string; edit: Step }[]
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-subheading">Review your booking</h2>
+
+      {failure && (
+        <div role="alert" className="flex items-start gap-3 rounded-xl bg-warning-soft p-4 text-sm text-warning ring-1 ring-warning/20">
+          <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-medium">We couldn&apos;t book that.</p>
+            <p>{failure.message}</p>
+            {failure.code !== "offer-unavailable" && (
+              <button type="button" onClick={onPickAnother} className="mt-2 font-medium underline underline-offset-4">
+                Choose another time
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <dl className="divide-y rounded-xl border">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-start justify-between gap-3 p-3 text-sm sm:p-4">
+            <div className="min-w-0">
+              <dt className="text-muted-foreground">{row.label}</dt>
+              <dd className="mt-0.5 font-medium wrap-break-word">{row.value}</dd>
+              {row.detail && <dd className="mt-0.5 text-muted-foreground">{row.detail}</dd>}
+            </div>
+            <button
+              type="button"
+              onClick={() => onEdit(row.edit)}
+              aria-label={`Change ${row.label.toLowerCase()}`}
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted focus-ring"
+            >
+              <PencilIcon className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        ))}
+      </dl>
+
+      <DemoNotice />
+      <ContactFields value={contact} onChange={onContact} />
+      <PaymentMethodPicker value={payment} onChange={onPayment} />
+      <DemoResultPicker value={demoResult} onChange={onDemoResult} />
+      <PriceBreakdown price={offer.price} label={offer.title} className="rounded-xl bg-muted/60 p-4 lg:hidden" />
+      <p className="text-sm text-muted-foreground">{cancellationTerms[offer.cancellation]}</p>
+    </div>
   )
 }
 
@@ -300,121 +496,6 @@ function OfferStep({
           </Link>
         </p>
       )}
-    </div>
-  )
-}
-
-type ScheduleStepProps = {
-  mentor: Mentor
-  isClient: boolean
-  day: string | null
-  time: string | null
-  timezone: string
-  note: string
-  onDay: (value: string) => void
-  onTime: (value: string) => void
-  onTimezone: (value: string) => void
-  onNote: (value: string) => void
-}
-
-function ScheduleStep({ mentor, isClient, day, time, timezone, note, onDay, onTime, onTimezone, onNote }: ScheduleStepProps) {
-  if (!isClient) {
-    return (
-      <div aria-busy="true" aria-label="Loading available times">
-        <Skeleton className="h-6 w-40" />
-        <div className="mt-4 flex gap-2">
-          {Array.from({ length: 5 }, (_, index) => (
-            <Skeleton key={index} className="h-20 w-16 rounded-xl" />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  const days = upcomingDays(mentor.availability.days)
-  const reference = days[0] ? slotIso(days[0], "12:00") : new Date()
-  const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone
-  const timezones = [...new Set([DHAKA_TZ, mentor.timezone, deviceTz])].map((value) => ({
-    value,
-    label: timezoneLabel(value, reference),
-  }))
-
-  return (
-    <div>
-      <h2 className="text-subheading">Pick a date</h2>
-      <div className="scrollbar-none -mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label="Available dates">
-        {days.map((value) => {
-          const parts = formatDateParts(slotIso(value, "12:00"))
-          return (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={day === value}
-              onClick={() => onDay(value)}
-              className={cn(
-                "flex w-16 shrink-0 flex-col items-center rounded-xl border py-2.5 transition focus-ring",
-                day === value ? "border-primary bg-primary text-primary-foreground" : "bg-card hover:border-foreground/30"
-              )}
-            >
-              <span className="text-xs">{parts.weekday}</span>
-              <span className="text-lg leading-tight font-semibold">{parts.day}</span>
-              <span className="text-xs">{parts.month}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-subheading">Pick a time</h2>
-        <FilterSelect label="Timezone" value={timezone} options={timezones} onChange={onTimezone} className="min-w-52" />
-      </div>
-      {day ? (
-        <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4" role="group" aria-label="Available times">
-          {mentor.availability.times.map((value) => {
-            const iso = slotIso(day, value)
-            return (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={time === value}
-                onClick={() => onTime(value)}
-                className={cn(
-                  "h-11 rounded-xl border text-sm font-medium transition focus-ring",
-                  time === value ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:border-foreground/30"
-                )}
-              >
-                {formatTime(iso, timezone)}
-              </button>
-            )
-          })}
-        </div>
-      ) : (
-        <p className="mt-4 flex items-center gap-2 rounded-xl bg-muted/60 p-4 text-sm text-muted-foreground">
-          <CalendarDaysIcon className="size-4" aria-hidden="true" />
-          Choose a date to see available times.
-        </p>
-      )}
-      {day && time && (
-        <p className="mt-3 text-sm text-muted-foreground">
-          {formatDate(slotIso(day, time), timezone)} at {formatTime(slotIso(day, time), timezone)}
-          {mentor.timezone !== timezone &&
-            ` · ${formatTime(slotIso(day, time), mentor.timezone)} for ${mentor.name.split(" ")[0]} in ${mentor.city}`}
-        </p>
-      )}
-
-      <div className="mt-8 grid gap-1.5">
-        <Label htmlFor="session-note">
-          What would you like to discuss? <span className="font-normal text-muted-foreground">(optional)</span>
-        </Label>
-        <Textarea
-          id="session-note"
-          rows={3}
-          value={note}
-          onChange={(event) => onNote(event.target.value)}
-          placeholder="Share your background and goals so the session starts fast."
-          className="bg-card"
-        />
-      </div>
     </div>
   )
 }
@@ -481,7 +562,7 @@ function ReviewDetailsStep({
   )
 }
 
-function MobileSummary({ mentor, offer, className }: { mentor: Mentor; offer: Offer; className?: string }) {
+function MobileSummary({ mentor, offer, slot, timezone, className }: { mentor: Mentor; offer: Offer; slot: string | null; timezone: string; className?: string }) {
   return (
     <div className={cn("flex items-center gap-3 surface p-3", className)}>
       <MentorAvatar name={mentor.name} photo={mentor.photo} className="size-11" />
@@ -490,6 +571,11 @@ function MobileSummary({ mentor, offer, className }: { mentor: Mentor; offer: Of
         <p className="truncate text-xs text-muted-foreground">
           {mentor.name} · {offerMeta(offer)}
         </p>
+        {slot && (
+          <p className="truncate text-xs font-medium">
+            {formatDate(slot, timezone)}, {formatTime(slot, timezone)}
+          </p>
+        )}
       </div>
       <p className="text-sm font-semibold">{formatPrice(offer.price)}</p>
     </div>
@@ -519,6 +605,9 @@ function Summary({ mentor, offer, slot, timezone }: { mentor: Mentor; offer: Off
             <CalendarDaysIcon className="size-4" aria-hidden="true" />
             {formatDate(slot, timezone)}, {formatTime(slot, timezone)}
           </p>
+        )}
+        {offer.type !== "review" && !slot && (
+          <p className="text-muted-foreground">Pick a date and time to continue.</p>
         )}
       </div>
       <PriceBreakdown price={offer.price} label={offer.type === "mentorship" ? "First month" : "Session price"} className="mt-5 border-t pt-5" />

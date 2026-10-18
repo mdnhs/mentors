@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { BanknoteIcon, CalendarCogIcon, LayersIcon } from "lucide-react"
 
-import { MentorApplication } from "@/components/mentors/mentor-application"
+import { ApplyPanel } from "@/components/apply/apply-panel"
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { Container } from "@/components/site/container"
 import { getListedMentors } from "@/lib/offers"
@@ -46,7 +46,7 @@ export default function BecomeMentorPage() {
         </ul>
       </div>
       <div className="lg:pt-4">
-        <MentorApplication />
+        <ApplyPanel />
       </div>
     </Container>
   )

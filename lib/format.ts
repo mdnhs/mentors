@@ -2,8 +2,19 @@ export const DHAKA_TZ = "Asia/Dhaka"
 
 const priceFormatter = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 })
 
-export function formatPrice(amount: number) {
-  return `৳${priceFormatter.format(amount)}`
+export function formatPrice(amount: number, currency = "BDT") {
+  if (currency === "BDT") return `${amount < 0 ? "-" : ""}৳${priceFormatter.format(Math.abs(amount))}`
+  return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount)
+}
+
+export function formatCountdown(ms: number) {
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 1) return "now"
+  if (minutes < 60) return `in ${minutes} min`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `in ${hours} ${hours === 1 ? "hour" : "hours"}`
+  const days = Math.round(hours / 24)
+  return `in ${days} ${days === 1 ? "day" : "days"}`
 }
 
 export function formatDuration(minutes: number) {

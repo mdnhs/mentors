@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test"
 
+import { signedIn } from "./helpers"
+
+test.beforeEach(async ({ page }) => {
+  await signedIn(page)
+})
+
 const offersPanel = (page: Page) => page.locator("#offers")
 async function selectOffer(page: Page, title: string) {
   await offersPanel(page).locator("label").filter({ hasText: title }).click()
@@ -86,8 +92,8 @@ test.describe("missing data", () => {
     await page.goto("/mentors/tahmina-sultana")
     await expect(page.getByRole("heading", { level: 1, name: "Tahmina Sultana" })).toBeVisible()
     await expect(page.getByRole("img", { name: "Portrait of Tahmina Sultana" })).toContainText("TS")
-    await expect(page.getByText("ID verified", { exact: true })).toBeVisible()
-    await expect(page.getByText("Experience not verified yet")).toBeVisible()
+    await expect(page.getByRole("link", { name: "ID checked" })).toBeVisible()
+    await expect(page.getByText("Education not checked yet")).toBeVisible()
     await expect(offersPanel(page)).toContainText("Tahmina isn't taking bookings right now")
     await expect(page.getByText("No reviews yet.")).toBeVisible()
     await expect(page.getByRole("link", { name: /opens in a new tab/ })).toHaveCount(0)
@@ -114,8 +120,9 @@ test.describe("missing data", () => {
 test.describe("profile details", () => {
   test("verification, links and reviews say only what the data supports", async ({ page }) => {
     await page.goto("/mentors/tanvir-rahman")
-    await expect(page.getByRole("link", { name: "ID and experience verified" })).toBeVisible()
-    await expect(page.getByText("It isn't a rating of their mentoring")).toBeVisible()
+    await expect(page.getByRole("link", { name: "ID, education and employment checked, expertise reviewed" })).toBeVisible()
+    await expect(page.getByText(/aren.t an endorsement by any employer or university/)).toBeVisible()
+    await expect(page.getByText("Mentoring not checked yet")).toBeVisible()
     const website = page.getByRole("link", { name: /Website/ })
     await expect(website).toHaveAttribute("href", "https://example.com/tanvir-rahman")
     await expect(website).toHaveAttribute("rel", /noopener/)

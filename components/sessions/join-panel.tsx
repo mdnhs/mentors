@@ -1,105 +1,149 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
-import { CheckCircle2Icon, Loader2Icon } from "lucide-react"
+import { useRef, useState } from "react"
+import { CheckCircle2Icon, CircleAlertIcon, Loader2Icon } from "lucide-react"
 
 import {
   ContactFields,
   DemoNotice,
+  DemoResultPicker,
   isValidContact,
   PaymentMethodPicker,
   PriceBreakdown,
   type Contact,
   type PaymentMethod,
 } from "@/components/checkout/checkout-parts"
+import { PaymentStatus } from "@/components/checkout/payment-status"
 import { DateBlock } from "@/components/sessions/date-block"
+import { MeetingCard } from "@/components/sessions/meeting-card"
 import { SeatsMeter } from "@/components/sessions/seats-meter"
+import { SessionBadge, sessionStatus } from "@/components/sessions/session-badge"
+import { useSessionView } from "@/components/sessions/use-session-view"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { priceBreakdown } from "@/lib/data"
-import { DHAKA_TZ, formatDate, formatDuration, formatPrice, formatTime } from "@/lib/format"
+import { cancellationTerms } from "@/lib/offers"
+import { formatDate, formatDuration, formatPrice, formatTime, timezoneLabel } from "@/lib/format"
+import { payForOrder, type DemoResult } from "@/lib/payment-client"
+import { startGroupCheckout, type PaymentOutcome } from "@/lib/payment-service"
+import { quote } from "@/lib/pricing"
+import { registrationDeadline } from "@/lib/sessions"
 import { site } from "@/lib/site"
-import { addBooking, createBookingId, useAppState } from "@/lib/store"
+import { createBookingId, createOrderId, transact } from "@/lib/store"
 import type { GroupSession } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-export function JoinPanel({ session }: { session: GroupSession }) {
-  const { bookings } = useAppState()
+export function JoinPanel({ session: base }: { session: GroupSession }) {
+  const view = useSessionView(base)
+  const { session, bookings, orders } = view
   const [open, setOpen] = useState(false)
   const [contact, setContact] = useState<Contact>({ name: site.learner.name, email: site.learner.email })
   const [payment, setPayment] = useState<PaymentMethod>("bkash")
+  const [demoResult, setDemoResult] = useState<DemoResult>("success")
   const [submitting, setSubmitting] = useState(false)
+  const [orderId, setOrderId] = useState<string | null>(null)
+  const [failure, setFailure] = useState<Extract<PaymentOutcome, { ok: false }> | null>(null)
+  const inFlight = useRef(false)
+  const requestId = useRef(createBookingId())
 
-  const joined = bookings.some((booking) => booking.sessionId === session.id)
-  const seatsLeft = session.seats ? session.seats.total - session.seats.taken - (joined ? 1 : 0) : null
-  const fullyBooked = seatsLeft !== null && seatsLeft <= 0 && !joined
-  const { total } = priceBreakdown(session.price)
+  const heldBooking = bookings.find((booking) => booking.sessionId === session.id && (booking.status === "pending" || booking.status === "confirmed"))
+  const order = orders.find((item) => item.id === orderId) ?? (heldBooking && orders.find((item) => item.bookingId === heldBooking.id))
+  const { total } = quote(session.price)
+  const status = sessionStatus(view)
 
   const confirm = async () => {
+    if (inFlight.current) return
+    inFlight.current = true
     setSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 1200))
-    addBooking({
-      id: createBookingId(),
-      kind: "group",
-      mentorSlug: session.mentorSlug,
-      sessionId: session.id,
-      title: session.title,
-      date: session.startsAt,
-      durationMinutes: session.durationMinutes,
-      timezone: DHAKA_TZ,
-      total,
-      status: "upcoming",
-    })
+    setFailure(null)
+    const outcome = await transact((current) =>
+      startGroupCheckout(
+        current,
+        { requestId: requestId.current, bookingId: createBookingId(), orderId: createOrderId(), method: payment, session: base, timezone: session.timezone },
+        new Date()
+      )
+    )
+    if (outcome.ok) {
+      setOrderId(outcome.order.id)
+      await payForOrder(outcome.order.id, payment, demoResult)
+    } else setFailure(outcome)
+    inFlight.current = false
     setSubmitting(false)
-    setOpen(false)
   }
 
-  const action = joined ? (
-    <Link href="/dashboard" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "w-full")}>
-      View in my sessions
-    </Link>
-  ) : (
-    <Button size="lg" className="w-full" disabled={fullyBooked} onClick={() => setOpen(true)}>
-      {fullyBooked ? "Fully booked" : `Reserve seat · ${formatPrice(session.price)}`}
-    </Button>
-  )
+  const restart = () => {
+    requestId.current = createBookingId()
+    setOrderId(null)
+    setFailure(null)
+  }
+
+  const closeDialog = (next: boolean) => {
+    if (submitting || order?.status === "processing") return
+    setOpen(next)
+    if (!next && order?.status === "confirmed") setOrderId(null)
+  }
+
+  const blockedLabel = !view.check.open && view.check.reason === "full" ? "Fully booked" : !view.check.open && view.check.reason === "closed" ? "Registration closed" : "Not available"
+  const action =
+    view.learner === "enrolled" || view.learner === "completed" ? (
+      <Link href="/dashboard" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "w-full")}>
+        View in my sessions
+      </Link>
+    ) : view.learner === "pending" ? (
+      <Button size="lg" className="w-full" onClick={() => setOpen(true)}>
+        Finish payment
+      </Button>
+    ) : view.phase === "cancelled" ? (
+      <Button size="lg" className="w-full" disabled>
+        Session cancelled
+      </Button>
+    ) : view.phase === "completed" ? (
+      <Button size="lg" className="w-full" disabled>
+        Session ended
+      </Button>
+    ) : view.check.open ? (
+      <Button size="lg" className="w-full" onClick={() => setOpen(true)}>
+        Reserve seat · {formatPrice(session.price)}
+      </Button>
+    ) : (
+      <Button size="lg" className="w-full" disabled>
+        {blockedLabel}
+      </Button>
+    )
+
+  const deadline = `${formatDate(registrationDeadline(session), session.timezone)}, ${formatTime(registrationDeadline(session), session.timezone)}`
 
   return (
     <>
       <div className="hidden surface p-5 shadow-card lg:block">
         <div className="flex items-center gap-4">
-          <DateBlock iso={session.startsAt} />
+          <DateBlock iso={session.startsAt} timeZone={session.timezone} />
           <div>
-            <p className="font-medium">{formatDate(session.startsAt)}</p>
+            <p className="font-medium">{formatDate(session.startsAt, session.timezone)}</p>
             <p className="text-sm text-muted-foreground">
-              {formatTime(session.startsAt)} Dhaka time · {formatDuration(session.durationMinutes)}
+              {formatTime(session.startsAt, session.timezone)} {timezoneLabel(session.timezone, session.startsAt).split(" ")[0]} time · {formatDuration(session.durationMinutes)}
             </p>
           </div>
         </div>
-        {session.seats && (
-          <SeatsMeter seats={{ total: session.seats.total, taken: session.seats.taken + (joined ? 1 : 0) }} className="mt-5" />
+        {view.phase === "scheduled" && (
+          <>
+            <SeatsMeter seats={{ total: session.seats.total, taken: session.seats.total - view.left }} className="mt-5" />
+            <p className="mt-3 text-xs text-muted-foreground">Registration closes {deadline}</p>
+          </>
         )}
         <p className="mt-5 text-2xl font-semibold">
           {formatPrice(session.price)}
           <span className="text-sm font-normal text-muted-foreground"> / seat</span>
         </p>
-        {joined && (
-          <p className="mt-3 flex items-center gap-2 rounded-xl bg-success-soft p-3 text-sm font-medium text-success">
-            <CheckCircle2Icon className="size-4" aria-hidden="true" />
-            You&apos;re in. See you there!
-          </p>
-        )}
+        <SessionNotice view={view} />
         <div className="mt-4">{action}</div>
+        <p className="mt-3 text-xs text-muted-foreground">{cancellationTerms.group}</p>
       </div>
 
       <div data-mobile-bar className="mobile-bar">
         <div className="mx-auto flex max-w-xl items-center gap-4">
-          {joined ? (
-            <p className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-success">
-              <CheckCircle2Icon className="size-4" aria-hidden="true" />
-              You&apos;re in
-            </p>
+          {status ? (
+            <SessionBadge view={view} className="shrink-0 py-1 text-sm" />
           ) : (
             <p className="shrink-0 text-sm">
               <span className="font-semibold">{formatPrice(session.price)}</span>
@@ -110,24 +154,105 @@ export function JoinPanel({ session }: { session: GroupSession }) {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={(next) => !submitting && setOpen(next)}>
+      <Dialog open={open} onOpenChange={closeDialog}>
         <DialogContent className="max-h-dvh gap-5 overflow-y-auto p-5 sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-lg">Reserve your seat</DialogTitle>
             <DialogDescription>
-              {session.title} · {formatDate(session.startsAt)}, {formatTime(session.startsAt)}
+              {session.title} · {formatDate(session.startsAt, session.timezone)}, {formatTime(session.startsAt, session.timezone)}
             </DialogDescription>
           </DialogHeader>
-          <DemoNotice />
-          <ContactFields value={contact} onChange={setContact} />
-          <PaymentMethodPicker value={payment} onChange={setPayment} />
-          <PriceBreakdown price={session.price} label="1 seat" className="rounded-xl bg-muted/60 p-4" />
-          <Button size="lg" onClick={confirm} disabled={!isValidContact(contact) || submitting}>
-            {submitting && <Loader2Icon className="animate-spin" aria-hidden="true" />}
-            {submitting ? "Confirming…" : `Confirm · ${formatPrice(total)}`}
-          </Button>
+          {order?.status === "confirmed" ? (
+            <div role="status" className="py-6 text-center">
+              <CheckCircle2Icon className="mx-auto size-10 text-success" aria-hidden="true" />
+              <h3 className="mt-4 text-subheading">You&apos;re in!</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Order {order.id} · {formatPrice(order.quote.total, order.quote.currency)} (demo payment). The session link appears here 30 minutes before the start.
+              </p>
+              <Link href="/dashboard" className={cn(buttonVariants({ size: "lg" }), "mt-5")}>
+                View in my sessions
+              </Link>
+            </div>
+          ) : order ? (
+            <PaymentStatus order={order} onRestart={restart} />
+          ) : (
+            <>
+              <DemoNotice />
+              {failure && (
+                <p role="alert" className="rounded-xl bg-warning-soft p-3 text-sm text-warning">
+                  {failure.message}
+                </p>
+              )}
+              <ContactFields value={contact} onChange={setContact} />
+              <PaymentMethodPicker value={payment} onChange={setPayment} />
+              <DemoResultPicker value={demoResult} onChange={setDemoResult} />
+              <PriceBreakdown price={session.price} label="1 seat" className="rounded-xl bg-muted/60 p-4" />
+              <p className="text-xs text-muted-foreground">{cancellationTerms.group}</p>
+              <Button size="lg" onClick={confirm} disabled={!isValidContact(contact) || submitting}>
+                {submitting && <Loader2Icon className="animate-spin" aria-hidden="true" />}
+                {submitting ? "Processing…" : `Pay ${formatPrice(total)}`}
+              </Button>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </>
   )
+}
+
+// Seats, deadline and status for phones, where the sticky panel is replaced by the bottom bar.
+export function SessionStatusMobile({ session: base }: { session: GroupSession }) {
+  const view = useSessionView(base)
+  const { session } = view
+  const closes = registrationDeadline(session)
+
+  return (
+    <div className="mt-6 lg:hidden">
+      {view.phase === "scheduled" && (
+        <>
+          <SeatsMeter seats={{ total: session.seats.total, taken: session.seats.total - view.left }} />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Registration closes {formatDate(closes, session.timezone)}, {formatTime(closes, session.timezone)}. {cancellationTerms.group}
+          </p>
+        </>
+      )}
+      <SessionNotice view={view} />
+    </div>
+  )
+}
+
+function SessionNotice({ view }: { view: ReturnType<typeof useSessionView> }) {
+  const { session } = view
+  if (view.phase === "cancelled") {
+    return (
+      <div role="status" className="mt-3 flex items-start gap-2 rounded-xl bg-muted p-3 text-sm">
+        <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <p>
+          <span className="font-medium">This session was cancelled.</span> {session.cancellationReason}{" "}
+          {view.learner === "cancelled" ? "Your payment is refunded in full." : "Anyone who paid is refunded in full."}
+        </p>
+      </div>
+    )
+  }
+  if (view.learner === "enrolled") {
+    return (
+      <div className="mt-3 space-y-3">
+        <p className="flex items-center gap-2 rounded-xl bg-success-soft p-3 text-sm font-medium text-success">
+          <CheckCircle2Icon className="size-4" aria-hidden="true" />
+          You&apos;re in. See you there!
+        </p>
+        <MeetingCard session={session} bookings={view.bookings} />
+      </div>
+    )
+  }
+  if (view.learner === "pending") {
+    return <p className="mt-3 rounded-xl bg-warning-soft p-3 text-sm text-warning">Your seat is held for a few minutes. Finish payment to keep it.</p>
+  }
+  if (!view.check.open && view.check.reason === "full") {
+    return <p className="mt-3 rounded-xl bg-warning-soft p-3 text-sm text-warning">This session is full.</p>
+  }
+  if (!view.check.open && view.check.reason === "closed") {
+    return <p className="mt-3 rounded-xl bg-muted p-3 text-sm">Registration for this session has closed.</p>
+  }
+  return null
 }

@@ -1,4 +1,5 @@
 import { getMentors, getSession } from "@/lib/data"
+import { registrationDeadline } from "@/lib/sessions"
 import type { CancellationPolicy, GroupOffer, Mentor, Offer } from "@/lib/types"
 
 export const cancellationTerms: Record<CancellationPolicy, string> = {
@@ -26,8 +27,10 @@ export function getOfferAvailability(mentor: Mentor, offer: Offer, now?: Date): 
     case "group": {
       const session = getSession(offer.sessionId)
       if (!session) return closed("This session is no longer scheduled.")
+      if (session.status === "cancelled") return closed("This session was cancelled.")
       if (now && new Date(session.startsAt) <= now) return closed("This session has already started.")
-      if (session.seats && session.seats.taken >= session.seats.total) return closed("This session is fully booked.")
+      if (now && new Date(registrationDeadline(session)) <= now) return closed("Registration for this session has closed.")
+      if (session.seats.taken >= session.seats.total) return closed("This session is fully booked.")
       return open
     }
     case "mentorship":

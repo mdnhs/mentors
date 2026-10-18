@@ -1,3 +1,5 @@
+"use client"
+
 import Link from "next/link"
 
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
@@ -9,10 +11,18 @@ import { SectionHeading } from "@/components/site/section-heading"
 import { buttonVariants } from "@/components/ui/button"
 import { getMentor, getSessions } from "@/lib/data"
 import { formatDate, formatDuration, formatPrice, formatTime } from "@/lib/format"
+import { checkEnrollment, resolveSession, seatsTaken } from "@/lib/sessions"
+import { useAppState, useNow } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 export function UpcomingSessions() {
-  const [next, ...rest] = getSessions()
+  const { bookings, cancelledSessions, sessionCapacity } = useAppState()
+  const now = useNow() ?? new Date(0)
+  const open = getSessions()
+    .map((session) => resolveSession(session, { cancelledSessions, sessionCapacity }))
+    .filter((session) => checkEnrollment(session, bookings, now).open)
+  const [next, ...rest] = open
+  if (!next) return null
   const nextMentor = getMentor(next.mentorSlug)!
 
   return (
@@ -41,7 +51,7 @@ export function UpcomingSessions() {
                 with <span className="font-medium">{nextMentor.name}</span>, {nextMentor.role} · {formatTime(next.startsAt)} ·{" "}
                 {formatDuration(next.durationMinutes)}
               </p>
-              {next.seats && <SeatsMeter seats={next.seats} className="mt-5 max-w-xs" />}
+              <SeatsMeter seats={{ total: next.seats.total, taken: seatsTaken(next, bookings, now) }} className="mt-5 max-w-xs" />
               <div className="mt-auto flex items-center justify-between gap-4 pt-6">
                 <p>
                   <span className="text-xl font-semibold">{formatPrice(next.price)}</span>

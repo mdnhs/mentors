@@ -5,11 +5,13 @@ import { CreditCardIcon, InfoIcon, SmartphoneIcon } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { priceBreakdown } from "@/lib/data"
 import { formatPrice } from "@/lib/format"
+import type { PaymentMethod } from "@/lib/orders"
+import type { DemoResult } from "@/lib/payment-client"
+import { PLATFORM_FEE_RATE, quote } from "@/lib/pricing"
 import { cn } from "@/lib/utils"
 
-export type PaymentMethod = "bkash" | "nagad" | "card"
+export type { PaymentMethod }
 
 const paymentMethods: { id: PaymentMethod; label: string; hint: string; icon: typeof CreditCardIcon }[] = [
   { id: "bkash", label: "bKash", hint: "Mobile wallet", icon: SmartphoneIcon },
@@ -22,30 +24,54 @@ export function DemoNotice({ className }: { className?: string }) {
     <p className={cn("flex gap-2.5 rounded-xl bg-warning-soft p-3 text-sm text-warning ring-1 ring-warning/20", className)}>
       <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <span>
-        <span className="font-medium">Demo checkout.</span> No payment will be collected and no real booking is made.
+        <span className="font-medium">Demo checkout.</span> No payment provider is connected, so no money is collected and nothing is paid out. The result below is simulated.
       </span>
     </p>
   )
 }
 
 export function PriceBreakdown({ price, label, className }: { price: number; label: string; className?: string }) {
-  const { fee, total } = priceBreakdown(price)
+  const { base, platformFee, total, currency } = quote(price)
 
   return (
     <dl className={cn("space-y-2 text-sm", className)}>
       <div className="flex justify-between gap-4">
         <dt className="text-muted-foreground">{label}</dt>
-        <dd>{formatPrice(price)}</dd>
+        <dd>{formatPrice(base, currency)}</dd>
       </div>
       <div className="flex justify-between gap-4">
-        <dt className="text-muted-foreground">Service fee (5%)</dt>
-        <dd>{formatPrice(fee)}</dd>
+        <dt className="text-muted-foreground">Platform fee ({PLATFORM_FEE_RATE * 100}%, added to your total)</dt>
+        <dd>{formatPrice(platformFee, currency)}</dd>
       </div>
       <div className="flex justify-between gap-4 border-t pt-2 text-base font-semibold">
-        <dt>Total</dt>
-        <dd>{formatPrice(total)}</dd>
+        <dt>Total to pay</dt>
+        <dd>{formatPrice(total, currency)}</dd>
       </div>
     </dl>
+  )
+}
+
+const demoResults: { id: DemoResult; label: string }[] = [
+  { id: "success", label: "Payment succeeds" },
+  { id: "failure", label: "Payment fails" },
+]
+
+export function DemoResultPicker({ value, onChange }: { value: DemoResult; onChange: (value: DemoResult) => void }) {
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium">Demo outcome</legend>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {demoResults.map((result) => (
+          <label
+            key={result.id}
+            className="flex cursor-pointer items-center justify-center rounded-xl border bg-card p-2.5 text-sm transition hover:border-foreground/20 has-checked:border-primary has-checked:bg-accent/60 has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+          >
+            <input type="radio" name="demo-result" value={result.id} checked={value === result.id} onChange={() => onChange(result.id)} className="sr-only" />
+            {result.label}
+          </label>
+        ))}
+      </div>
+    </fieldset>
   )
 }
 

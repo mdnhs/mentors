@@ -45,7 +45,7 @@ export type OfferFact = { icon: LucideIcon; text: string }
 
 // Only the details a learner needs to decide on this particular kind of offer.
 export function offerFacts(mentor: Mentor, offer: Offer): OfferFact[] {
-  const schedule = { icon: CalendarIcon, text: `${availabilityLabel(mentor)}, Dhaka time` }
+  const schedule = { icon: CalendarIcon, text: `${availabilityLabel(mentor)}, mentor local time` }
 
   switch (offer.type) {
     case "one-on-one":

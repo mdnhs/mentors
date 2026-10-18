@@ -9,10 +9,12 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { offerTypeLabels } from "@/lib/categories"
 import { formatPrice } from "@/lib/format"
 import { cancellationTerms, getOfferAvailability, getPublishedOffers, offerActionLabels, offerHref } from "@/lib/offers"
+import { useManagedMentor } from "@/lib/store"
 import type { Mentor } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-export function OfferPanel({ mentor }: { mentor: Mentor }) {
+export function OfferPanel({ mentor: catalogMentor }: { mentor: Mentor }) {
+  const mentor = useManagedMentor(catalogMentor.slug) ?? catalogMentor
   const firstName = mentor.name.split(" ")[0]
   const offers = getPublishedOffers(mentor).map((offer) => ({ offer, availability: getOfferAvailability(mentor, offer, new Date()) }))
   const [selectedId, setSelectedId] = useState(() => (offers.find((item) => item.availability.bookable) ?? offers[0])?.offer.id)

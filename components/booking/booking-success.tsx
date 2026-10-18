@@ -4,10 +4,11 @@ import { CheckIcon } from "lucide-react"
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { buttonVariants } from "@/components/ui/button"
 import { offerTypeLabels } from "@/lib/categories"
-import { formatDate, formatDuration, formatPrice, formatTime } from "@/lib/format"
+import { formatDate, formatDuration, formatPrice, formatTime, timezoneLabel } from "@/lib/format"
+import type { Order } from "@/lib/orders"
 import type { Booking, Mentor } from "@/lib/types"
 
-export function BookingSuccess({ booking, mentor }: { booking: Booking; mentor: Mentor }) {
+export function BookingSuccess({ booking, mentor, order }: { booking: Booking; mentor: Mentor; order: Order }) {
   const firstName = mentor.name.split(" ")[0]
   const isReview = booking.kind === "review"
 
@@ -16,9 +17,16 @@ export function BookingSuccess({ booking, mentor }: { booking: Booking; mentor: 
     isReview
       ? { label: "Feedback by", value: formatDate(booking.date, booking.timezone) }
       : { label: "When", value: `${formatDate(booking.date, booking.timezone)}, ${formatTime(booking.date, booking.timezone)}` },
+    !isReview && mentor.timezone !== booking.timezone
+      ? { label: `${firstName}'s time`, value: `${formatDate(booking.date, mentor.timezone)}, ${formatTime(booking.date, mentor.timezone)}` }
+      : null,
+    !isReview ? { label: "Your timezone", value: timezoneLabel(booking.timezone, booking.date) } : null,
     booking.durationMinutes && !isReview ? { label: "Duration", value: formatDuration(booking.durationMinutes) } : null,
     { label: "Booking ID", value: booking.id },
-    { label: "Total (not charged)", value: formatPrice(booking.total) },
+    { label: "Order ID", value: order.id },
+    { label: "Price", value: formatPrice(order.quote.base, order.quote.currency) },
+    { label: "Platform fee", value: formatPrice(order.quote.platformFee, order.quote.currency) },
+    { label: "Total (demo payment)", value: formatPrice(order.quote.total, order.quote.currency) },
   ].filter(Boolean) as { label: string; value: string }[]
 
   return (
@@ -52,7 +60,7 @@ export function BookingSuccess({ booking, mentor }: { booking: Booking; mentor: 
           ))}
         </dl>
       </div>
-      <p className="mt-4 text-xs text-muted-foreground">This is a demo booking. No payment was taken.</p>
+      <p className="mt-4 text-xs text-muted-foreground">Demo booking: it is saved in this browser only and no payment was taken.</p>
 
       <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center">
         <Link href="/dashboard" className={buttonVariants({ size: "lg" })}>

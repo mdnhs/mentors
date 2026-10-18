@@ -1,3 +1,5 @@
+import type { Verification } from "@/lib/verification"
+
 export type Track = "tech" | "education"
 
 export type CategoryId =
@@ -14,7 +16,8 @@ export type OfferType = "one-on-one" | "group" | "review" | "mentorship"
 export type Language = "Bangla" | "English" | "Japanese"
 
 // Unpublished offers stay in the data so mentors can edit them, but learners never see or book them.
-export type OfferStatus = "published" | "paused" | "draft"
+// Archived offers are retired: hidden from learners like the others, but kept so past bookings still make sense.
+export type OfferStatus = "published" | "paused" | "draft" | "archived"
 
 export type CancellationPolicy = "flexible" | "standard" | "group" | "review" | "monthly"
 
@@ -48,6 +51,17 @@ export type MentorLinkKind = "linkedin" | "github" | "website" | "portfolio" | "
 
 export type MentorLink = { kind: MentorLinkKind; url: string }
 
+export type MentorAvailability = {
+  // Weekday numbers (0 = Sunday) and HH:mm start times in the mentor's own timezone.
+  days: number[]
+  times: string[]
+  // YYYY-MM-DD dates in the mentor's timezone.
+  unavailableDates?: string[]
+  bufferMinutes?: number
+  minNoticeHours?: number
+  maxAdvanceDays?: number
+}
+
 export type Mentor = {
   slug: string
   name: string
@@ -63,16 +77,12 @@ export type Mentor = {
   skills: string[]
   education: string
   languages: Language[]
-  verification: { identity: boolean; experience: boolean }
+  verification: Verification
   bio: string
   highlights: string[]
   links?: MentorLink[]
   offers: Offer[]
-  availability: {
-    // Weekday numbers (0 = Sunday) and HH:mm start times in Asia/Dhaka.
-    days: number[]
-    times: string[]
-  }
+  availability: MentorAvailability
 }
 
 export type Review = {
@@ -87,22 +97,34 @@ export type Review = {
   text: string
 }
 
+export type SessionStatus = "scheduled" | "cancelled"
+
 export type GroupSession = {
   id: string
   title: string
   mentorSlug: string
   category: CategoryId
+  // Topics the mentor covers, used for search and shown on the detail page.
+  expertise: string[]
   format: string
   startsAt: string
+  timezone: string
   durationMinutes: number
   price: number
   language: string
   summary: string
   agenda: string[]
-  seats?: { total: number; taken: number }
+  // `taken` counts seats held by other learners; this learner's own seat is added from their booking.
+  seats: { total: number; taken: number }
+  // Enrollment closes at this instant; defaults to the start time.
+  registrationClosesAt?: string
+  // Sessions are scheduled unless the mentor cancelled them. Ended sessions are derived from the clock.
+  status?: SessionStatus
+  cancellationReason?: string
 }
 
-export type BookingStatus = "upcoming" | "completed" | "in-review"
+// "in-review" is the in-progress state of written reviews, which have no call slot.
+export type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled" | "expired" | "in-review"
 
 export type Booking = {
   id: string
@@ -118,6 +140,35 @@ export type Booking = {
   total: number
   status: BookingStatus
   note?: string
+  // Client-generated key that makes a repeated submission return the original booking.
+  requestId?: string
+  createdAt?: string
+  // A pending booking holds its slot only until this instant.
+  expiresAt?: string
+  cancelledAt?: string
+  refundPercent?: number
+  rescheduleCount?: number
+  // Policy captured when the booking was made.
+  cancellation?: CancellationPolicy
+  // Made-up demo record, not something this learner booked.
+  sample?: true
+  // Set on bookings other learners made with a mentor; absent for the signed-in learner's own.
+  learnerName?: string
 }
+
+export type ActionItem = { id: string; text: string; done: boolean; by: "mentor" | "you" }
+
+export type BookingNotes = {
+  // Written by the mentor and shared with the learner; the learner can't edit it.
+  summary?: string
+  actions: ActionItem[]
+  // Private to the learner.
+  personal: string
+  sample?: true
+}
+
+export type Profile = { name: string; email: string; timezone: string }
+
+export type NotificationPrefs = { reminders: boolean; bookingUpdates: boolean; mentorActivity: boolean; tips: boolean }
 
 export type ReviewedBooking = Pick<Booking, "id" | "mentorSlug" | "kind" | "status">
