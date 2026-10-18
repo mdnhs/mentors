@@ -1,8 +1,12 @@
-import Link from "next/link"
-import { CheckIcon } from "lucide-react"
+"use client"
 
+import Link from "next/link"
+import { PrinterIcon } from "lucide-react"
+
+import { AddToCalendar } from "@/components/booking/add-to-calendar"
+import { SuccessHero } from "@/components/booking/success-hero"
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
-import { buttonVariants } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { offerTypeLabels } from "@/lib/categories"
 import { formatDate, formatDuration, formatPrice, formatTime, timezoneLabel } from "@/lib/format"
 import type { Order } from "@/lib/orders"
@@ -30,20 +34,13 @@ export function BookingSuccess({ booking, mentor, order }: { booking: Booking; m
   ].filter(Boolean) as { label: string; value: string }[]
 
   return (
-    <div className="mx-auto max-w-lg py-6 text-center sm:py-12" role="status">
-      <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-soft text-success ring-8 ring-success-soft/50">
-        <CheckIcon className="size-7" aria-hidden="true" />
-      </span>
-      <h1 className="mt-6 text-heading">
-        {isReview ? "Review requested" : `You're booked with ${firstName}`}
-      </h1>
-      <p className="mt-2 text-muted-foreground">
-        {isReview
-          ? `${firstName} will send written feedback to your inbox.`
-          : "You'll find the call link in My sessions before it starts."}
-      </p>
+    <div className="mx-auto max-w-lg py-6 text-center sm:py-12 print:py-0">
+      <SuccessHero
+        title={isReview ? "Review requested" : `You're booked with ${firstName}`}
+        description={isReview ? `${firstName} will send written feedback to your inbox.` : "You'll find the call link in My sessions before it starts."}
+      />
 
-      <div className="mt-8 surface p-5 text-left shadow-card">
+      <div className="mt-8 surface p-5 text-left shadow-card print:shadow-none">
         <div className="flex items-center gap-3 border-b pb-4">
           <MentorAvatar name={mentor.name} photo={mentor.photo} className="size-11" />
           <div className="min-w-0">
@@ -62,7 +59,25 @@ export function BookingSuccess({ booking, mentor, order }: { booking: Booking; m
       </div>
       <p className="mt-4 text-xs text-muted-foreground">Demo booking: it is saved in this browser only and no payment was taken.</p>
 
-      <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center">
+      <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center print:hidden">
+        {!isReview && booking.durationMinutes ? (
+          <AddToCalendar
+            event={{
+              uid: booking.id,
+              start: booking.date,
+              durationMinutes: booking.durationMinutes,
+              title: `${booking.title} with ${mentor.name}`,
+              description: `MentorBridge booking ${booking.id}. The call link appears in My sessions before the session starts.`,
+            }}
+          />
+        ) : null}
+        <Button variant="outline" size="lg" onClick={() => window.print()}>
+          <PrinterIcon aria-hidden="true" />
+          Print receipt
+        </Button>
+      </div>
+
+      <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center print:hidden">
         <Link href="/dashboard" className={buttonVariants({ size: "lg" })}>
           Go to my sessions
         </Link>

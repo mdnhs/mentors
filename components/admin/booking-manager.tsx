@@ -1,14 +1,15 @@
 "use client"
 
-import { useState } from "react"
 import { XCircleIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, Feedback, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { AdminPageHeader, DemoNotice, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
+import { ConfirmAction } from "@/components/site/confirm-action"
 import { Button } from "@/components/ui/button"
 import { adminCancelBooking } from "@/lib/admin-client"
-import { adminBookingRows, type AdminBookingRow } from "@/lib/admin-selectors"
+import { adminBookingRows, adminCancelPreview, bookingStatusLabels, policyLabels, type AdminBookingRow } from "@/lib/admin-selectors"
 import { usePrincipal } from "@/lib/auth"
 import { effectiveStatus } from "@/lib/booking-policy"
 import { getMentor } from "@/lib/data"
@@ -20,17 +21,14 @@ export function BookingManager() {
   const source = useAdminSource()
   const principal = usePrincipal()
   const now = useNow()
-  const [busy, setBusy] = useState<string | null>(null)
-  const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
   const rows = adminBookingRows(source)
   const statusOf = (row: AdminBookingRow) => (now ? effectiveStatus(row.booking, now) : row.booking.status)
 
   const cancel = async (row: AdminBookingRow) => {
-    setBusy(row.id)
     const result = await adminCancelBooking(principal, row.booking.id, row.scope === "other" ? "incoming" : "learner")
-    setBusy(null)
-    setFeedback({ tone: result.ok ? "ok" : "error", text: result.ok ? `${row.booking.id}: ${result.message}` : result.message })
+    if (result.ok) toast.success(`${row.booking.id}: ${result.message}`)
+    else toast.error(result.message)
   }
 
   const columns: Column<AdminBookingRow>[] = [
@@ -62,10 +60,10 @@ export function BookingManager() {
     {
       id: "status",
       header: "Booking status",
-      sortValue: (row) => statusOf(row),
+      sortValue: (row) => bookingStatusLabels[statusOf(row)],
       cell: (row) => (
         <div className="flex flex-wrap items-center gap-1.5">
-          <StatusBadge tone={moderationTone(statusOf(row))}>{statusOf(row)}</StatusBadge>
+          <StatusBadge tone={moderationTone(statusOf(row))}>{bookingStatusLabels[statusOf(row)]}</StatusBadge>
           {row.booking.sample && <SampleBadge />}
         </div>
       ),
@@ -88,14 +86,39 @@ export function BookingManager() {
       id: "action",
       header: "Action",
       cell: (row) => {
-        const cancellable = ["pending", "confirmed", "in-review"].includes(statusOf(row))
-        return cancellable ? (
-          <Button variant="outline" size="sm" onClick={() => cancel(row)} disabled={busy === row.id}>
-            <XCircleIcon aria-hidden="true" />
-            {busy === row.id ? "Cancelling…" : "Cancel & refund"}
-          </Button>
-        ) : (
-          <span className="text-xs text-muted-foreground">No action</span>
+        const preview = now ? adminCancelPreview(row, now) : null
+        if (!preview?.allowed) return <span className="text-xs text-muted-foreground">No action</span>
+        return (
+          <ConfirmAction
+            trigger={
+              <Button variant="outline" size="sm">
+                <XCircleIcon aria-hidden="true" />
+                Cancel & refund<span className="sr-only"> {row.booking.id}</span>
+              </Button>
+            }
+            title={`Cancel booking ${row.booking.id}?`}
+            description={
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-left">
+                <dt>Booking</dt>
+                <dd className="text-foreground">{row.booking.title}</dd>
+                <dt>Order</dt>
+                <dd className="text-foreground">{row.order?.id ?? "No order"}</dd>
+                <dt>Charged</dt>
+                <dd className="text-foreground tabular-nums">{formatPrice(preview.charged, preview.currency)}</dd>
+                <dt>Refund</dt>
+                <dd className="font-medium text-foreground tabular-nums">
+                  {formatPrice(preview.refund, preview.currency)} ({preview.refundPercent}%)
+                </dd>
+                <dt>Policy</dt>
+                <dd className="text-foreground">{policyLabels[preview.policy]}</dd>
+                <dd className="col-span-2 mt-1 text-xs">{preview.terms} This is a demo refund — no money moves.</dd>
+              </dl>
+            }
+            confirmLabel="Cancel & refund"
+            busyLabel="Cancelling…"
+            destructive
+            onConfirm={() => cancel(row)}
+          />
         )
       },
     },
@@ -110,6 +133,8 @@ export function BookingManager() {
         rows={rows}
         columns={columns}
         rowKey={(row) => row.id}
+        exportFilename="bookings"
+        loading={!now}
         search={(row) => `${row.booking.id} ${row.booking.title} ${row.learner} ${row.booking.mentorSlug}`}
         searchPlaceholder="Search booking id, title or learner…"
         searchLabel="Search bookings"
@@ -136,8 +161,6 @@ export function BookingManager() {
           },
         ]}
       />
-
-      {feedback && <Feedback tone={feedback.tone}>{feedback.text}</Feedback>}
     </div>
   )
 }

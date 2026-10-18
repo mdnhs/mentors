@@ -64,7 +64,7 @@ export function SchedulePicker({ mentor, durationMinutes, bookings, now, ignoreB
     const list = byDay.get(dateKey)
     if (!list) return { disabled: true, hint: `${firstName} isn't available` }
     const open = list.filter((slot) => slot.available).length
-    return { disabled: false, hint: open > 0 ? `${open} ${open === 1 ? "time" : "times"} open` : "no times left" }
+    return open > 0 ? { disabled: false, hint: `${open} ${open === 1 ? "time" : "times"} open` } : { disabled: false, full: true, hint: "fully booked" }
   }
 
   const reference = new Date(value ?? firstOpen ?? now)
@@ -81,7 +81,9 @@ export function SchedulePicker({ mentor, durationMinutes, bookings, now, ignoreB
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-subheading">Pick a date</h2>
+        <h2 tabIndex={-1} className="text-subheading outline-none">
+          Pick a date
+        </h2>
         <FilterSelect
           label="Your timezone"
           value={timezone}

@@ -1,5 +1,8 @@
+import type { Role } from "@/lib/permissions"
+
 export const site = {
   name: "MentorBridge",
+  url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   description:
     "Book 1:1 sessions, live group sessions and expert reviews with experienced mentors in tech careers and higher education.",
   learner: {
@@ -21,3 +24,10 @@ export const nav = [
   { label: "Study Abroad", href: "/mentors?track=education" },
   { label: "Group Sessions", href: "/sessions" },
 ] as const
+
+export const roleLabels: Record<Role, string> = {
+  learner: "Learner",
+  mentor: "Mentor",
+  reviewer: "Reviewer",
+  admin: "Admin",
+}

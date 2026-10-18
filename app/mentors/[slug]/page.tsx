@@ -1,21 +1,21 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
-import { ArrowUpRightIcon, CheckIcon, MapPinIcon, MessageSquareIcon, ShieldCheckIcon, ShieldIcon, StarIcon } from "lucide-react"
+import { ArrowUpRightIcon, CheckIcon, MapPinIcon, ShieldCheckIcon, ShieldIcon, StarIcon } from "lucide-react"
 
-import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { MentorPhoto } from "@/components/mentors/mentor-photo"
+import { MentorReviews } from "@/components/mentors/mentor-reviews"
 import { MentorsBackLink } from "@/components/mentors/mentors-back-link"
 import { VerificationList } from "@/components/mentors/verification-list"
 import { MobileBookBar } from "@/components/mentors/mobile-book-bar"
 import { OfferPanel } from "@/components/mentors/offer-panel"
 import { ProfileSkeleton } from "@/components/mentors/profile-skeleton"
 import { SaveButton } from "@/components/mentors/save-button"
+import { ShareButton } from "@/components/mentors/share-button"
 import { TimezoneLabel } from "@/components/mentors/timezone-label"
 import { Container } from "@/components/site/container"
-import { offerTypeLabels } from "@/lib/categories"
 import { availabilityLabel, getLocation, getMentor, getMentors, getRating, getReviews } from "@/lib/data"
-import { formatMonthYear } from "@/lib/format"
+import { site } from "@/lib/site"
 import { hasAnyCheck, verificationSummary } from "@/lib/verification"
 import type { Mentor, MentorLinkKind } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -32,9 +32,56 @@ export function generateStaticParams() {
   return getMentors().map((mentor) => ({ slug: mentor.slug }))
 }
 
+function summarize(text: string, max = 160) {
+  if (text.length <= max) return text
+  return `${text.slice(0, text.lastIndexOf(" ", max - 1))}…`
+}
+
 export async function generateMetadata({ params }: PageProps<"/mentors/[slug]">): Promise<Metadata> {
   const mentor = getMentor((await params).slug)
-  return mentor ? { title: `${mentor.name}, ${mentor.role}` } : {}
+  if (!mentor) return {}
+
+  const title = `${mentor.name}, ${mentor.role}`
+  const description = summarize(mentor.bio)
+  const url = `/mentors/${mentor.slug}`
+  const images = mentor.photo ? [{ url: mentor.photo, alt: `Portrait of ${mentor.name}` }] : undefined
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: { type: "profile", siteName: site.name, url, title, description, images },
+    twitter: { card: images ? "summary_large_image" : "summary", title, description, images },
+  }
+}
+
+// schema.org only allows aggregateRating on things like services, not people, so the rating sits on the mentoring service.
+function MentorJsonLd({ mentor }: { mentor: Mentor }) {
+  const rating = getRating(mentor.slug)
+  const url = new URL(`/mentors/${mentor.slug}`, site.url).toString()
+  const person = {
+    "@type": "Person",
+    "@id": `${url}#person`,
+    name: mentor.name,
+    jobTitle: mentor.role,
+    worksFor: { "@type": "Organization", name: mentor.organization },
+    description: mentor.bio,
+    url,
+    image: mentor.photo ? new URL(mentor.photo, site.url).toString() : undefined,
+    address: { "@type": "PostalAddress", addressLocality: mentor.city, addressCountry: mentor.country },
+    knowsAbout: mentor.skills,
+    knowsLanguage: mentor.languages,
+    sameAs: mentor.links?.map((link) => link.url),
+  }
+  const service = rating && {
+    "@type": "Service",
+    name: `Mentoring with ${mentor.name}`,
+    provider: { "@id": person["@id"] },
+    aggregateRating: { "@type": "AggregateRating", ratingValue: rating.average, reviewCount: rating.count, bestRating: 5, worstRating: 1 },
+  }
+  const jsonLd = { "@context": "https://schema.org", "@graph": service ? [person, service] : [person] }
+
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
 }
 
 export default function MentorProfilePage({ params }: PageProps<"/mentors/[slug]">) {
@@ -53,6 +100,7 @@ async function MentorProfile({ params }: Pick<PageProps<"/mentors/[slug]">, "par
 
   return (
     <>
+      <MentorJsonLd mentor={mentor} />
       <Container className="pt-6 pb-16 sm:pt-8 sm:pb-24">
         <MentorsBackLink />
 
@@ -97,7 +145,7 @@ async function MentorProfile({ params }: Pick<PageProps<"/mentors/[slug]">, "par
             )}
 
             <VerificationList verification={mentor.verification} />
-            <Reviews mentor={mentor} />
+            <MentorReviews reviews={getReviews(mentor.slug)} rating={getRating(mentor.slug)} firstName={firstName} />
           </div>
         </div>
       </Container>
@@ -148,6 +196,7 @@ function ProfileHeader({ mentor, className }: { mentor: Mentor; className?: stri
 
         <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
           <SaveButton slug={mentor.slug} name={mentor.name} variant="outline" />
+          <ShareButton title={`${mentor.name}, ${mentor.role}`} text={`Book a session with ${mentor.name} on ${site.name}`} />
           {mentor.links?.map((link) => (
             <a
               key={link.url}
@@ -190,67 +239,6 @@ function AtAGlance({ mentor }: { mentor: Mentor }) {
           </div>
         ))}
       </dl>
-    </section>
-  )
-}
-
-function Reviews({ mentor }: { mentor: Mentor }) {
-  const reviews = getReviews(mentor.slug)
-  const rating = getRating(mentor.slug)
-  const firstName = mentor.name.split(" ")[0]
-
-  return (
-    <section aria-labelledby="reviews">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 id="reviews" className="scroll-mt-24 text-subheading">Reviews</h2>
-        {rating && (
-          <p className="flex items-center gap-1.5 text-sm">
-            <StarIcon className="size-4 fill-rating text-rating" aria-hidden="true" />
-            <span className="font-semibold">{rating.average.toFixed(1)}</span>
-            <span className="text-muted-foreground">
-              · {rating.count} {rating.count === 1 ? "review" : "reviews"}
-            </span>
-          </p>
-        )}
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">Only learners who completed a booking can leave a review.</p>
-
-      {reviews.length === 0 ? (
-        <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-          <MessageSquareIcon className="size-4" aria-hidden="true" />
-          No reviews yet. {firstName} hasn&apos;t completed any reviewed bookings.
-        </p>
-      ) : (
-        <ul className="mt-2 divide-y">
-          {reviews.map((review) => (
-            <li key={review.id} className="py-5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <MentorAvatar name={review.author} className="size-9" />
-                  <div>
-                    <p className="text-sm font-medium">{review.author}</p>
-                    <p className="text-xs text-muted-foreground">{review.authorRole}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="flex justify-end gap-0.5" aria-label={`${review.rating} out of 5 stars`}>
-                    {Array.from({ length: 5 }, (_, index) => (
-                      <StarIcon
-                        key={index}
-                        className={cn("size-3.5", index < review.rating ? "fill-rating text-rating" : "fill-muted text-muted")}
-                        aria-hidden="true"
-                      />
-                    ))}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">{formatMonthYear(review.date)}</p>
-                </div>
-              </div>
-              <p className="mt-3 text-sm leading-relaxed">{review.text}</p>
-              <p className="mt-2 text-xs text-muted-foreground">{offerTypeLabels[review.offerType]}</p>
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
   )
 }

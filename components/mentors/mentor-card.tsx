@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { BadgeCheckIcon, CalendarIcon, MapPinIcon } from "lucide-react"
+import { BadgeCheckIcon, CalendarIcon, ChevronRightIcon, MapPinIcon } from "lucide-react"
 
 import { MentorPhoto } from "@/components/mentors/mentor-photo"
 import { Rating } from "@/components/mentors/rating"
@@ -45,7 +45,7 @@ export function MentorCard({ mentor, priority, price, layout = "responsive", cla
         <SaveButton slug={mentor.slug} name={mentor.name} className={cn("absolute top-2 right-2 z-10", responsive && "hidden sm:inline-flex")} />
         <span
           className={cn(
-            "absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-xs font-medium backdrop-blur",
+            "absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium backdrop-blur",
             responsive && "hidden sm:inline-flex"
           )}
         >
@@ -58,7 +58,7 @@ export function MentorCard({ mentor, priority, price, layout = "responsive", cla
         <div className="flex items-start justify-between gap-2">
           <h3 className="flex min-w-0 items-center gap-1 text-base font-semibold">
             <span className="truncate">{mentor.name}</span>
-            {isVerified && <BadgeCheckIcon className="size-4 shrink-0 text-primary" aria-label="ID and credentials checked" />}
+            {isVerified && <BadgeCheckIcon className="size-4 shrink-0 text-primary" role="img" aria-label="ID and credentials checked" />}
           </h3>
           {responsive && <SaveButton slug={mentor.slug} name={mentor.name} className="-mt-1.5 -mr-1.5 size-9 shadow-none sm:hidden" />}
           <Rating slug={mentor.slug} className={cn("shrink-0", responsive && "hidden sm:inline-flex")} />
@@ -84,11 +84,13 @@ export function MentorCard({ mentor, priority, price, layout = "responsive", cla
           <Link
             href={`/mentors/${mentor.slug}`}
             className={cn(
-              "rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-colors outline-none group-hover:bg-primary group-hover:text-primary-foreground after:absolute after:inset-0 after:rounded-2xl focus-visible:after:ring-3 focus-visible:after:ring-ring/50",
-              responsive && "max-sm:sr-only"
+              "inline-flex items-center rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-colors outline-none group-hover:bg-primary group-hover:text-primary-foreground after:absolute after:inset-0 after:rounded-2xl focus-visible:after:ring-3 focus-visible:after:ring-ring/50",
+              responsive && "max-sm:px-2"
             )}
           >
-            Book session<span className="sr-only"> with {mentor.name}</span>
+            <span className={cn(responsive && "max-sm:sr-only")}>Book session</span>
+            <span className="sr-only"> with {mentor.name}</span>
+            {responsive && <ChevronRightIcon className="size-4 sm:hidden" aria-hidden="true" />}
           </Link>
         </div>
       </div>

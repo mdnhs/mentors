@@ -22,7 +22,9 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps<"/sessions/[id]">): Promise<Metadata> {
   const session = getSession((await params).id)
-  return session ? { title: session.title } : {}
+  return session
+    ? { title: session.title, description: session.summary, alternates: { canonical: `/sessions/${session.id}` } }
+    : {}
 }
 
 export default function SessionPage({ params }: PageProps<"/sessions/[id]">) {

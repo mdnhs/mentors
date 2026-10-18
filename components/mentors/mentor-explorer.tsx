@@ -1,7 +1,7 @@
 "use client"
 
 import { usePathname, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { SearchXIcon, SlidersHorizontalIcon, XIcon } from "lucide-react"
 
 import { Chip } from "@/components/filters/chip"
@@ -20,6 +20,8 @@ import {
   filtersFromParams,
   filtersToParams,
   getActiveFilters,
+  MENTOR_PAGE_SIZE,
+  pageFromParams,
   sortOptions,
   type FilterUpdate,
   type MentorFilters,
@@ -40,10 +42,24 @@ function useIsDesktop() {
   return useSyncExternalStore(subscribeDesktop, () => window.matchMedia(desktopQuery).matches, () => false)
 }
 
-function toUrl(pathname: string, filters: MentorFilters) {
+function toParams(filters: MentorFilters, page = 1) {
+  const params = filtersToParams(filters)
+  if (page > 1) params.set("page", page.toString())
+  return params
+}
+
+function toUrl(pathname: string, filters: MentorFilters, page = 1) {
   // Commas stay readable in shared links (format=one-on-one,group).
-  const query = filtersToParams(filters).toString().replace(/%2C/g, ",")
+  const query = toParams(filters, page).toString().replace(/%2C/g, ",")
   return query ? `${pathname}?${query}` : pathname
+}
+
+type HistoryMode = "push" | "replace"
+
+function writeUrl(url: string, mode: HistoryMode) {
+  if (url === `${window.location.pathname}${window.location.search}`) return
+  if (mode === "push") window.history.pushState(null, "", url)
+  else window.history.replaceState(null, "", url)
 }
 
 export function MentorExplorer() {
@@ -52,28 +68,47 @@ export function MentorExplorer() {
   const isDesktop = useIsDesktop()
   const [sheetOpen, setSheetOpen] = useState(false)
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams])
+  const page = pageFromParams(searchParams)
 
   // The URL is the single source of truth, so links, reloads and the back button all restore the same results.
+  // Discrete changes push a history entry so Back undoes them; typing replaces so Back skips every keystroke.
   // Patches read the live URL rather than the last render, so rapid toggles don't overwrite each other.
   const apply = useCallback(
-    (update: FilterUpdate) => {
+    (update: FilterUpdate, mode: HistoryMode = "push") => {
       const current = filtersFromParams(new URLSearchParams(window.location.search))
       const patch = typeof update === "function" ? update(current) : update
-      window.history.replaceState(null, "", toUrl(pathname, { ...current, ...patch }))
+      writeUrl(toUrl(pathname, { ...current, ...patch }), mode)
     },
     [pathname]
   )
 
-  const commitQuery = useCallback((q: string) => apply({ q }), [apply])
+  const commitQuery = useCallback((q: string) => apply({ q }, "replace"), [apply])
   const [query, setQuery] = useDraft(filters.q, commitQuery)
 
   useEffect(() => {
-    const normalized = filtersToParams(filters).toString()
-    if (normalized !== searchParams.toString()) window.history.replaceState(null, "", toUrl(pathname, filters))
+    const normalized = toParams(filters, page).toString()
+    if (normalized !== searchParams.toString()) window.history.replaceState(null, "", toUrl(pathname, filters, page))
     rememberMentorSearch(normalized)
-  }, [filters, searchParams, pathname])
+  }, [filters, page, searchParams, pathname])
 
   const results = useMemo(() => filterMentors({ ...filters, q: query }), [filters, query])
+  const visible = results.slice(0, page * MENTOR_PAGE_SIZE)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const focusIndex = useRef<number | null>(null)
+
+  // The button can vanish on the last page, so focus moves to the first newly shown mentor instead.
+  useEffect(() => {
+    if (focusIndex.current === null) return
+    gridRef.current?.querySelectorAll("article")[focusIndex.current]?.querySelector("a")?.focus()
+    focusIndex.current = null
+  }, [page])
+
+  const showMore = () => {
+    focusIndex.current = visible.length
+    const live = new URLSearchParams(window.location.search)
+    writeUrl(toUrl(pathname, filtersFromParams(live), pageFromParams(live) + 1), "replace")
+  }
+
   const active = getActiveFilters(filters)
   const visibleCategories = categories.filter((item) => filters.track === "all" || item.track === filters.track)
   const resultLabel = `${results.length} ${results.length === 1 ? "mentor" : "mentors"}`
@@ -188,38 +223,55 @@ export function MentorExplorer() {
         </ul>
       )}
 
-      <div className="mt-6 flex items-center justify-between gap-4 text-sm">
-        <p className="text-muted-foreground" aria-live="polite">
-          <span className="font-medium text-foreground">{results.length}</span> {results.length === 1 ? "mentor" : "mentors"}
-          {query.trim() && <span> for “{query.trim()}”</span>}
-        </p>
-        <FilterSelect
-          label="Sort by"
-          value={filters.sort}
-          options={sortOptions}
-          onChange={(sort) => apply({ sort })}
-          className="hidden min-w-44 md:flex"
-        />
-      </div>
-
-      {results.length > 0 ? (
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {results.map(({ mentor, price }, index) => (
-            <MentorCard key={mentor.slug} mentor={mentor} price={price} priority={index < 4} />
-          ))}
+      <section aria-labelledby="results-heading">
+        <h2 id="results-heading" className="sr-only">
+          Results
+        </h2>
+        <div className="mt-6 flex items-center justify-between gap-4 text-sm">
+          <p className="text-muted-foreground" aria-live="polite">
+            <span className="font-medium text-foreground">{results.length}</span> {results.length === 1 ? "mentor" : "mentors"}
+            {query.trim() && <span> for “{query.trim()}”</span>}
+          </p>
+          <FilterSelect
+            label="Sort by"
+            value={filters.sort}
+            options={sortOptions}
+            onChange={(sort) => apply({ sort })}
+            className="hidden min-w-44 md:flex"
+          />
         </div>
-      ) : (
-        <EmptyState
-          icon={SearchXIcon}
-          title="No mentors match"
-          description="Try a shorter search, another topic, or fewer filters."
-          className="mt-4"
-        >
-          <Button variant="outline" onClick={resetAll}>
-            Reset search and filters
-          </Button>
-        </EmptyState>
-      )}
+
+        {results.length > 0 ? (
+          <>
+            <div ref={gridRef} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {visible.map(({ mentor, price }, index) => (
+                <MentorCard key={mentor.slug} mentor={mentor} price={price} priority={index < 4} />
+              ))}
+            </div>
+            {visible.length < results.length && (
+              <div className="mt-8 flex flex-col items-center gap-2">
+                <p className="text-sm text-muted-foreground">
+                  Showing {visible.length} of {results.length} mentors
+                </p>
+                <Button variant="outline" size="lg" onClick={showMore}>
+                  Show more mentors
+                </Button>
+              </div>
+            )}
+          </>
+        ) : (
+          <EmptyState
+            icon={SearchXIcon}
+            title="No mentors match"
+            description="Try a shorter search, another topic, or fewer filters."
+            className="mt-4"
+          >
+            <Button variant="outline" onClick={resetAll}>
+              Reset search and filters
+            </Button>
+          </EmptyState>
+        )}
+      </section>
     </div>
   )
 }

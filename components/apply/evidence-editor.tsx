@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { FileTextIcon, LinkIcon, MessageSquareQuoteIcon, XIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,7 +10,6 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { validateEvidence, type EvidenceItem } from "@/lib/mentor-application"
 import { checkCopy, checkKinds, type CheckKind } from "@/lib/verification"
-import { cn } from "@/lib/utils"
 
 const formLabels = { file: "Upload a document", link: "Link", reference: "Reference" } as const
 const formIcons = { file: FileTextIcon, link: LinkIcon, reference: MessageSquareQuoteIcon } as const
@@ -23,7 +23,8 @@ const hints: Record<CheckKind, string> = {
 
 type Props = {
   items: EvidenceItem[]
-  onChange: (items: EvidenceItem[]) => void
+  // Receives an updater, so an Undo that fires later applies to the latest list rather than a stale copy.
+  onChange: (change: (items: EvidenceItem[]) => EvidenceItem[]) => void
   errors: Record<string, string>
   // Kinds a reviewer asked for, shown as a prompt while answering an information request.
   requested?: CheckKind[]
@@ -37,8 +38,30 @@ export function EvidenceEditor({ items, onChange, errors, requested = [] }: Prop
   const [reference, setReference] = useState("")
   const [file, setFile] = useState<{ name: string; type: string; size: number } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
+  const [fileInputKey, setFileInputKey] = useState(0)
 
   const effectiveForm = kind === "identity" ? "file" : form
+  const missing = !label.trim()
+    ? "Add a short label first."
+    : effectiveForm === "file" && !file
+      ? "Choose a file first."
+      : effectiveForm === "link" && !url.trim()
+        ? "Add a web address first."
+        : effectiveForm === "reference" && !reference.trim()
+          ? "Describe who can vouch for you first."
+          : null
+
+  const remove = (item: EvidenceItem) => {
+    const position = items.findIndex((entry) => entry.id === item.id)
+    onChange((current) => current.filter((entry) => entry.id !== item.id))
+    toast(`Removed “${item.label}”`, {
+      duration: 8000,
+      action: {
+        label: "Undo",
+        onClick: () => onChange((current) => (current.some((entry) => entry.id === item.id) ? current : [...current.slice(0, position), item, ...current.slice(position)])),
+      },
+    })
+  }
 
   const add = () => {
     const item: EvidenceItem = {
@@ -56,11 +79,13 @@ export function EvidenceEditor({ items, onChange, errors, requested = [] }: Prop
       setProblem(error)
       return
     }
-    onChange([...items, item])
+    onChange((current) => [...current, item])
     setLabel("")
     setUrl("")
     setReference("")
     setFile(null)
+    // A file input can't be cleared through state, so remounting it drops the old filename.
+    setFileInputKey((value) => value + 1)
     setProblem(null)
   }
 
@@ -72,7 +97,7 @@ export function EvidenceEditor({ items, onChange, errors, requested = [] }: Prop
         </p>
       )}
       {(errors.identity || errors.credential || errors.evidence) && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" tabIndex={-1} data-focus-error className="text-sm text-destructive outline-none">
           {errors.identity ?? errors.credential ?? errors.evidence}
         </p>
       )}
@@ -92,7 +117,7 @@ export function EvidenceEditor({ items, onChange, errors, requested = [] }: Prop
                   </p>
                   {itemError && <p className="text-destructive">{itemError}</p>}
                 </div>
-                <button type="button" aria-label={`Remove ${item.label}`} onClick={() => onChange(items.filter((entry) => entry.id !== item.id))} className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted focus-ring">
+                <button type="button" aria-label={`Remove ${item.label}`} onClick={() => remove(item)} className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted focus-ring">
                   <XIcon className="size-4" aria-hidden="true" />
                 </button>
               </li>
@@ -136,6 +161,7 @@ export function EvidenceEditor({ items, onChange, errors, requested = [] }: Prop
           <div className="grid gap-1.5">
             <Label htmlFor="evidence-file">File (PDF, JPG or PNG, up to 5 MB)</Label>
             <Input
+              key={fileInputKey}
               id="evidence-file"
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
@@ -167,9 +193,16 @@ export function EvidenceEditor({ items, onChange, errors, requested = [] }: Prop
             {problem}
           </p>
         )}
-        <Button type="button" variant="outline" onClick={add} className={cn(!label.trim() && "opacity-70")}>
-          Add evidence
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" onClick={add} disabled={Boolean(missing)} aria-describedby={missing ? "evidence-missing" : undefined}>
+            Add evidence
+          </Button>
+          {missing && (
+            <p id="evidence-missing" className="text-xs text-muted-foreground">
+              {missing}
+            </p>
+          )}
+        </div>
       </fieldset>
     </div>
   )

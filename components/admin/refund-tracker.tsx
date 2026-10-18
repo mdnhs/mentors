@@ -2,10 +2,12 @@
 
 import { useState } from "react"
 import { CircleDollarSignIcon, GavelIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, Feedback, ReasonPanel, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { AdminPageHeader, DemoNotice, ReasonDialog, SampleBadge, StatusBadge, moderationTone, notify } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
+import { ConfirmAction } from "@/components/site/confirm-action"
 import { Button } from "@/components/ui/button"
 import { adminCompleteRefund } from "@/lib/admin-client"
 import { disputeStatusLabels, type Dispute, type DisputeStatus } from "@/lib/admin"
@@ -20,24 +22,19 @@ export function RefundTracker() {
   const source = useAdminSource()
   const principal = usePrincipal()
   const now = useNow()
-  const [busy, setBusy] = useState<string | null>(null)
   const [pending, setPending] = useState<{ dispute: Dispute; status: DisputeStatus } | null>(null)
-  const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
   const orders = adminRefundOrders(source)
   const disputes = [...source.admin.disputes].sort((a, b) => b.openedAt.localeCompare(a.openedAt))
 
   const completeRefund = async (order: Order) => {
-    setBusy(order.id)
     const result = await adminCompleteRefund(principal, order.id, source.orders.some((item) => item.id === order.id) ? "learner" : "incoming")
-    setBusy(null)
-    setFeedback({ tone: result.ok ? "ok" : "error", text: result.ok ? `${order.id}: ${result.message}` : result.message })
+    if (result.ok) toast.success(`${order.id}: ${result.message}`)
+    else toast.error(result.message)
   }
 
   const move = (dispute: Dispute, status: DisputeStatus, note?: string) => {
-    const result = adminUpdateDispute(principal, dispute.id, status, note)
-    setFeedback(result.ok ? { tone: "ok", text: `${dispute.id} is now ${disputeStatusLabels[status].toLowerCase()}.` } : { tone: "error", text: result.message })
-    if (result.ok) setPending(null)
+    if (notify(adminUpdateDispute(principal, dispute.id, status, note), `${dispute.id} is now ${disputeStatusLabels[status].toLowerCase()}.`)) setPending(null)
   }
 
   const refundColumns: Column<Order>[] = [
@@ -77,10 +74,33 @@ export function RefundTracker() {
       header: "Action",
       cell: (row) =>
         row.status === "refund-pending" ? (
-          <Button variant="outline" size="sm" onClick={() => completeRefund(row)} disabled={busy === row.id}>
-            <CircleDollarSignIcon aria-hidden="true" />
-            {busy === row.id ? "Completing…" : "Complete refund"}
-          </Button>
+          <ConfirmAction
+            trigger={
+              <Button variant="outline" size="sm">
+                <CircleDollarSignIcon aria-hidden="true" />
+                Complete refund<span className="sr-only"> {row.id}</span>
+              </Button>
+            }
+            title={`Complete refund on ${row.id}?`}
+            description={
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-left">
+                <dt>Order</dt>
+                <dd className="text-foreground">{row.id}</dd>
+                <dt>Charged</dt>
+                <dd className="text-foreground tabular-nums">{formatPrice(row.quote.total, row.quote.currency)}</dd>
+                <dt>Refund</dt>
+                <dd className="font-medium text-foreground tabular-nums">
+                  {formatPrice(row.refundAmount ?? 0, row.quote.currency)}
+                  {row.refundPercent !== undefined && ` (${row.refundPercent}%)`}
+                </dd>
+                <dd className="col-span-2 mt-1 text-xs">The refund amount was set by the booking&apos;s cancellation policy when it was cancelled. Settling is a demo state change — no money moves.</dd>
+              </dl>
+            }
+            confirmLabel="Complete refund"
+            busyLabel="Completing…"
+            destructive
+            onConfirm={() => completeRefund(row)}
+          />
         ) : (
           <span className="text-xs text-muted-foreground">No action</span>
         ),
@@ -93,6 +113,7 @@ export function RefundTracker() {
       id: "order",
       header: "Order",
       secondary: true,
+      csv: (row) => row.orderId,
       cell: (row) => (
         <div className="text-muted-foreground">
           {row.orderId}
@@ -100,12 +121,13 @@ export function RefundTracker() {
         </div>
       ),
     },
-    { id: "learner", header: "Learner", secondary: true, cell: (row) => <span className="text-muted-foreground">{row.learnerEmail}</span> },
+    { id: "learner", header: "Learner", secondary: true, csv: (row) => row.learnerEmail, cell: (row) => <span className="text-muted-foreground">{row.learnerEmail}</span> },
     { id: "amount", header: "Amount", align: "right", sortValue: (row) => row.amount, cell: (row) => <span className="tabular-nums">{formatPrice(row.amount, row.currency)}</span> },
     {
       id: "reason",
       header: "Reason",
       secondary: true,
+      csv: (row) => row.reason,
       cell: (row) => (
         <div className="max-w-72 text-xs text-muted-foreground">
           {row.reason}
@@ -164,6 +186,8 @@ export function RefundTracker() {
             rows={orders}
             columns={refundColumns}
             rowKey={(row) => row.id}
+            urlKey="refunds"
+            exportFilename="refunds"
             search={(row) => `${row.id} ${row.title} ${row.mentorSlug}`}
             searchPlaceholder="Search order or booking…"
             searchLabel="Search refunds"
@@ -192,6 +216,8 @@ export function RefundTracker() {
             rows={disputes}
             columns={disputeColumns}
             rowKey={(row) => row.id}
+            urlKey="disputes"
+            exportFilename="disputes"
             search={(row) => `${row.id} ${row.orderId} ${row.learnerEmail} ${row.reason}`}
             searchPlaceholder="Search dispute, order or learner…"
             searchLabel="Search disputes"
@@ -201,6 +227,7 @@ export function RefundTracker() {
                 id: "status",
                 label: "Status",
                 options: [
+                  { id: "unresolved", label: "Unresolved", match: (row) => row.status === "open" || row.status === "investigating" },
                   { id: "open", label: "Open", match: (row) => row.status === "open" },
                   { id: "investigating", label: "Investigating", match: (row) => row.status === "investigating" },
                   { id: "resolved", label: "Resolved", match: (row) => row.status === "refunded" || row.status === "declined" },
@@ -212,7 +239,7 @@ export function RefundTracker() {
       </section>
 
       {pending && (
-        <ReasonPanel
+        <ReasonDialog
           title={`${pending.status === "refunded" ? "Refund" : "Decline"} dispute ${pending.dispute.id}`}
           description={`${pending.dispute.learnerEmail} · ${formatPrice(pending.dispute.amount, pending.dispute.currency)} on ${pending.dispute.orderId}`}
           label="Resolution note"
@@ -223,8 +250,6 @@ export function RefundTracker() {
           onCancel={() => setPending(null)}
         />
       )}
-
-      {feedback && <Feedback tone={feedback.tone}>{feedback.text}</Feedback>}
 
       {now && <span className="sr-only">Rendered at {now.toISOString()}</span>}
     </div>

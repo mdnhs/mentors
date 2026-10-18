@@ -1,10 +1,12 @@
 "use client"
 
-import { useState } from "react"
-import { InfoIcon } from "lucide-react"
+import { useRef, useState } from "react"
+import { InfoIcon, MinusIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -25,23 +27,45 @@ export function AdminPageHeader({ title, description, actions }: { title: string
 
 // Every admin screen carries the same honest framing: this interface records demo decisions and controls
 // no real payments, documents or accounts.
-export function DemoNotice({ children }: { children?: React.ReactNode }) {
+export function DemoNotice({ label = "Demo administration.", className, children }: { label?: string; className?: string; children?: React.ReactNode }) {
   return (
-    <p role="note" className="flex gap-2.5 rounded-xl bg-warning-soft p-3 text-sm text-warning ring-1 ring-warning/20">
+    <p role="note" className={cn("flex gap-2.5 rounded-xl bg-warning-soft p-3 text-sm text-warning ring-1 ring-warning/20", className)}>
       <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <span>
-        <span className="font-medium">Demo administration.</span>{" "}
+        <span className="font-medium">{label}</span>{" "}
         {children ?? "Records marked Sample are made up, sign-in is simulated, and these controls change only this browser's data — no real payment, payout or account is affected."}
       </span>
     </p>
   )
 }
 
-export function MetricCard({ label, value, detail, tone = "neutral" }: { label: string; value: string; detail?: string; tone?: "neutral" | "accent" }) {
+export function MetricCard({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+  delta,
+}: {
+  label: string
+  value: string
+  detail?: string
+  tone?: "neutral" | "accent"
+  delta?: { change: number | null; period: string }
+}) {
+  const DeltaIcon = !delta || delta.change === null || delta.change === 0 ? MinusIcon : delta.change > 0 ? TrendingUpIcon : TrendingDownIcon
   return (
     <div className={cn("surface p-4", tone === "accent" && "border-primary/30 bg-accent/40")}>
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
+      {delta && (
+        <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+          <DeltaIcon className="size-3.5" aria-hidden="true" />
+          <span className="font-medium text-foreground tabular-nums">
+            {delta.change === null ? "No earlier data" : `${delta.change > 0 ? "+" : ""}${Math.round(delta.change * 100)}%`}
+          </span>
+          vs {delta.period}
+        </p>
+      )}
       {detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}
     </div>
   )
@@ -85,9 +109,8 @@ export function moderationTone(status: string): Tone {
   }
 }
 
-// A small inline prompt for actions that need a written reason. The reason is validated again in the domain
-// layer, so the length rule here is a hint, not the guard.
-export function ReasonPanel({
+// The domain layer validates the reason again; the length rule here is only a hint.
+export function ReasonDialog({
   title,
   description,
   label,
@@ -109,43 +132,45 @@ export function ReasonPanel({
   children?: React.ReactNode
 }) {
   const [reason, setReason] = useState("")
+  const textarea = useRef<HTMLTextAreaElement>(null)
   return (
-    <form
-      aria-label={title}
-      className="surface mt-4 space-y-3 p-4"
-      onSubmit={(event) => {
-        event.preventDefault()
-        onSubmit(reason)
-      }}
-    >
-      <div>
-        <h2 className="text-subheading">{title}</h2>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {children}
-      <div className="grid gap-1.5">
-        <Label htmlFor="admin-reason">{label}</Label>
-        <Textarea id="admin-reason" rows={2} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={placeholder} className="bg-card" />
-        <p className="text-xs text-muted-foreground">Recorded in the audit log as metadata only. Never paste document contents, ID numbers or payment details.</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" variant={destructive ? "destructive" : "default"} disabled={reason.trim().length < 8}>
-          {submitLabel}
-        </Button>
-        <Button type="button" variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent initialFocus={textarea} className="sm:max-w-md">
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            onSubmit(reason)
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            {description && <DialogDescription>{description}</DialogDescription>}
+          </DialogHeader>
+          {children}
+          <div className="grid gap-1.5">
+            <Label htmlFor="admin-reason">{label}</Label>
+            <Textarea ref={textarea} id="admin-reason" rows={3} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={placeholder} aria-describedby="admin-reason-hint" className="bg-card" />
+            <p id="admin-reason-hint" className="text-xs text-muted-foreground">
+              At least 8 characters. Recorded in the audit log as metadata only. Never paste document contents, ID numbers or payment details.
+            </p>
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
+            <Button type="submit" variant={destructive ? "destructive" : "default"} disabled={reason.trim().length < 8}>
+              {submitLabel}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-export function Feedback({ tone, children }: { tone: "ok" | "error"; children: React.ReactNode }) {
-  return (
-    <p role={tone === "error" ? "alert" : "status"} className={cn("mt-4 rounded-xl p-3 text-sm", tone === "error" ? "bg-warning-soft text-warning" : "bg-success-soft text-success")}>
-      {children}
-    </p>
-  )
+export function notify(result: { ok: boolean; message?: string }, success: string) {
+  if (result.ok) toast.success(success)
+  else toast.error(result.message ?? "That didn't work.")
+  return result.ok
 }
 
 export const percent = (value: number) => `${Math.round(value * 100)}%`

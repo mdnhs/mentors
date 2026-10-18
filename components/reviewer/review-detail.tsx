@@ -1,13 +1,18 @@
 "use client"
 
 import { useState } from "react"
-import { ExternalLinkIcon, EyeIcon, FileTextIcon } from "lucide-react"
+import { Radio } from "@base-ui/react/radio"
+import { RadioGroup } from "@base-ui/react/radio-group"
+import { CircleAlertIcon, CircleCheckIcon, ExternalLinkIcon, EyeIcon, FileTextIcon } from "lucide-react"
 
 import { SamplePill } from "@/components/dashboard/booking-row"
 import { ApplicationStatusBadge } from "@/components/reviewer/status-badge"
+import { ConfirmAction } from "@/components/site/confirm-action"
 import { EmptyState } from "@/components/site/empty-state"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import { PageBreadcrumbs, type Crumb } from "@/components/ui/page-breadcrumbs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { usePrincipal } from "@/lib/auth"
@@ -16,22 +21,34 @@ import { formatDate, formatTime } from "@/lib/format"
 import { approvalBlocker, visibleTo, type Application, type EvidenceItem, type Verdict, type Verdicts } from "@/lib/mentor-application"
 import { openEvidence, reviewApplication, useAppState } from "@/lib/store"
 import { checkCopy, checkKinds, type CheckKind } from "@/lib/verification"
-import { cn } from "@/lib/utils"
 
 const verdictLabels: Record<Verdict, string> = { verified: "Verified", "not-verified": "Could not verify", unchecked: "Not checked yet" }
 
-export function ReviewDetail({ id }: { id: string }) {
+export function ReviewDetail({ id, crumbs }: { id: string; crumbs: Crumb[] }) {
   const { applications } = useAppState()
   const principal = usePrincipal()
-  if (!principal) return <Skeleton className="mt-6 h-64 rounded-2xl" />
-
   // visibleTo already leaves out drafts and the reviewer's own application.
-  const application = visibleTo(principal, applications).find((item) => item.id === id)
-  if (!application) {
-    return <EmptyState icon={FileTextIcon} headingAs="h1" title="We couldn't find that application" description="It may not be submitted yet, or it may be your own." className="mt-6" />
-  }
-  return <Detail application={application} />
+  const application = principal ? visibleTo(principal, applications).find((item) => item.id === id) : undefined
+
+  return (
+    <>
+      <PageBreadcrumbs items={[...crumbs, { label: application?.data.basic.fullName ?? "Application" }]} />
+      {!principal ? (
+        <Skeleton className="mt-6 h-64 rounded-2xl" />
+      ) : application ? (
+        <Detail application={application} />
+      ) : (
+        <EmptyState icon={FileTextIcon} headingAs="h1" title="We couldn't find that application" description="It may not be submitted yet, or it may be your own." className="mt-6" />
+      )}
+    </>
+  )
 }
+
+const modes = [
+  ["approve", "Approve"],
+  ["request-info", "Ask for info"],
+  ["reject", "Not approve"],
+] as const
 
 function Detail({ application }: { application: Application }) {
   const principal = usePrincipal()
@@ -208,13 +225,21 @@ function Detail({ application }: { application: Application }) {
         {reviewing && (
           <div className="surface space-y-4 p-4 sm:p-5">
             <h2 className="text-subheading">Decision</h2>
-            <div role="radiogroup" aria-label="Decision" className="grid grid-cols-3 gap-1.5 text-sm">
-              {([["approve", "Approve"], ["request-info", "Ask for info"], ["reject", "Not approve"]] as const).map(([value, label]) => (
-                <button key={value} type="button" role="radio" aria-checked={mode === value} onClick={() => { setMode(value); setFeedback(null) }} className={cn("rounded-lg border px-2 py-2 focus-ring", mode === value ? "border-primary bg-accent/60 font-medium" : "bg-card")}>
+            <RadioGroup
+              aria-label="Decision"
+              value={mode}
+              onValueChange={(value: (typeof modes)[number][0]) => {
+                setMode(value)
+                setFeedback(null)
+              }}
+              className="grid grid-cols-3 gap-1.5 text-sm"
+            >
+              {modes.map(([value, label]) => (
+                <Radio.Root key={value} value={value} className="flex cursor-pointer items-center justify-center rounded-lg border bg-card px-2 py-2 text-center focus-ring data-checked:border-primary data-checked:bg-accent/60 data-checked:font-medium">
                   {label}
-                </button>
+                </Radio.Root>
               ))}
-            </div>
+            </RadioGroup>
 
             {mode === "request-info" && (
               <fieldset>
@@ -255,11 +280,33 @@ function Detail({ application }: { application: Application }) {
                 Send request
               </Button>
             )}
-            {mode === "reject" && (
-              <Button variant="destructive" className="w-full" disabled={dirty} onClick={() => act({ kind: "reject", message: shared, internalNote: internal }, "Application not approved.")}>
-                Not approve
-              </Button>
-            )}
+            {mode === "reject" &&
+              // Without a reason the domain refuses the decision, so show that error before asking to confirm.
+              (shared.trim() === "" ? (
+                <Button variant="destructive" className="w-full" disabled={dirty} onClick={() => act({ kind: "reject", message: shared, internalNote: internal }, "Application not approved.")}>
+                  Not approve
+                </Button>
+              ) : (
+                <ConfirmAction
+                  trigger={
+                    <Button variant="destructive" className="w-full" disabled={dirty}>
+                      Not approve
+                    </Button>
+                  }
+                  title={`Not approve ${data.basic.fullName}?`}
+                  description={
+                    <>
+                      <p>This is a final decision. The applicant sees this reason:</p>
+                      <p className="mt-2 rounded-lg bg-muted p-2 text-foreground">{shared.trim()}</p>
+                    </>
+                  }
+                  confirmLabel="Not approve"
+                  busyLabel="Saving…"
+                  cancelLabel="Go back"
+                  destructive
+                  onConfirm={() => act({ kind: "reject", message: shared, internalNote: internal }, "Application not approved.")}
+                />
+              ))}
           </div>
         )}
 
@@ -275,9 +322,10 @@ function Detail({ application }: { application: Application }) {
         )}
 
         {feedback && (
-          <p role={feedback.tone === "error" ? "alert" : "status"} className={cn("rounded-xl p-3 text-sm", feedback.tone === "error" ? "bg-warning-soft text-warning" : "bg-success-soft text-success")}>
-            {feedback.text}
-          </p>
+          <Alert variant={feedback.tone === "error" ? "destructive" : "success"} role={feedback.tone === "error" ? "alert" : "status"}>
+            {feedback.tone === "error" ? <CircleAlertIcon aria-hidden="true" /> : <CircleCheckIcon aria-hidden="true" />}
+            <AlertDescription className="text-current">{feedback.text}</AlertDescription>
+          </Alert>
         )}
       </aside>
     </div>

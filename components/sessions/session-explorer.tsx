@@ -8,6 +8,8 @@ import { SearchInput } from "@/components/filters/search-input"
 import { SessionCard } from "@/components/sessions/session-card"
 import { EmptyState } from "@/components/site/empty-state"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { categories } from "@/lib/categories"
 import { getSessions } from "@/lib/data"
 import { searchSessions } from "@/lib/session-search"
@@ -38,9 +40,6 @@ export function SessionExplorer() {
         <Chip active={category === "all"} onClick={() => setCategory("all")}>
           All topics
         </Chip>
-        <Chip active={showPast} onClick={() => setShowPast(!showPast)}>
-          Show past sessions
-        </Chip>
         {sessionCategories.map((item) => (
           <Chip key={item.id} active={category === item.id} onClick={() => setCategory(category === item.id ? "all" : item.id)}>
             <item.icon aria-hidden="true" />
@@ -49,9 +48,17 @@ export function SessionExplorer() {
         ))}
       </div>
 
-      <p className="mt-6 text-sm text-muted-foreground" aria-live="polite">
-        <span className="font-medium text-foreground">{upcoming}</span> upcoming {upcoming === 1 ? "session" : "sessions"}
-      </p>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          <span className="font-medium text-foreground">{upcoming}</span> upcoming {upcoming === 1 ? "session" : "sessions"}
+        </p>
+        <div className="flex items-center gap-2">
+          <Switch id="show-past-sessions" checked={showPast} onCheckedChange={setShowPast} />
+          <Label htmlFor="show-past-sessions" className="text-sm font-normal">
+            Show past sessions
+          </Label>
+        </div>
+      </div>
 
       {results.length > 0 ? (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -66,6 +73,7 @@ export function SessionExplorer() {
             onClick={() => {
               setQuery("")
               setCategory("all")
+              setShowPast(false)
             }}
           >
             Show all sessions

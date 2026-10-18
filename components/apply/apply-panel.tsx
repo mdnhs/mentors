@@ -27,11 +27,17 @@ export function ApplyPanel() {
         <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
           <LockIcon className="size-6" aria-hidden="true" />
         </span>
-        <h2 className="mt-4 text-subheading">Log in to apply</h2>
+        <h2 className="mt-4 text-subheading">Create an account to apply</h2>
         <p className="mt-1 text-sm text-muted-foreground">Your application is saved to your account as a draft, and only you and our reviewers can see it.</p>
-        <Link href="/login?next=%2Fbecome-a-mentor" className={cn(buttonVariants({ size: "lg" }), "mt-5")}>
-          Log in to start
+        <Link href="/signup?next=%2Fbecome-a-mentor" className={cn(buttonVariants({ size: "lg" }), "mt-5")}>
+          Create account to start
         </Link>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <Link href="/login?next=%2Fbecome-a-mentor" className="link">
+            Log in
+          </Link>
+        </p>
       </div>
     )
   }
@@ -93,6 +99,6 @@ export function ApplyPanel() {
   }
 
   const editable = application.status === "draft" || (application.status === "info-required" && editing)
-  if (editable) return <ApplicationWizard application={application} principal={principal} startAt={application.status === "info-required" ? "evidence" : undefined} />
+  if (editable) return <ApplicationWizard key={application.id} application={application} principal={principal} startAt={application.status === "info-required" ? "evidence" : undefined} />
   return <StatusView application={application} principal={principal} onEdit={() => setEditing(true)} />
 }

@@ -18,7 +18,15 @@ const columns = [
     title: "Mentors",
     links: [
       { label: "Become a Mentor", href: "/become-a-mentor" },
+      { label: "Mentor workspace", href: "/dashboard/mentor" },
+    ],
+  },
+  {
+    title: "Account",
+    links: [
+      { label: "Log in", href: "/login" },
       { label: "My sessions", href: "/dashboard" },
+      { label: "Settings", href: "/dashboard/settings" },
     ],
   },
   {
@@ -33,9 +41,9 @@ const columns = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t bg-card">
-      <Container className="grid grid-cols-2 gap-x-6 gap-y-10 py-12 sm:grid-cols-3 lg:grid-cols-5">
-        <div className="col-span-2 sm:col-span-3 lg:col-span-2">
+    <footer className="border-t bg-card print:hidden">
+      <Container className="grid grid-cols-2 gap-x-6 gap-y-10 py-12 sm:grid-cols-4 lg:grid-cols-6">
+        <div className="col-span-2 sm:col-span-4 lg:col-span-2">
           <Logo />
           <p className="mt-3 max-w-xs text-sm text-muted-foreground">
             Mentorship from people who&apos;ve done it, for students and young professionals in Bangladesh.

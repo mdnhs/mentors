@@ -1,19 +1,26 @@
 "use client"
 
 import { useState } from "react"
-import { InfoIcon } from "lucide-react"
+import { CircleAlertIcon, CircleCheckIcon } from "lucide-react"
 
+import { DemoNotice } from "@/components/admin/parts"
+import { MentorPageHeader } from "@/components/mentor/mentor-shell"
 import { useMentorWorkspace } from "@/components/mentor/use-mentor-workspace"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { BarChart } from "@/components/ui/chart"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatDate, formatPrice } from "@/lib/format"
-import { MIN_PAYOUT, statement, type StatementLine } from "@/lib/mentor-finance"
+import { earningsByMonth, MIN_PAYOUT, statement, type StatementLine } from "@/lib/mentor-finance"
 import { DEMO_MENTOR_SLUG } from "@/lib/permissions"
 import { MENTOR_COMMISSION_RATE } from "@/lib/pricing"
 import { requestDemoPayout, settleDemoPayout } from "@/lib/store"
 import { cn } from "@/lib/utils"
+
+const monthLabel = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
 
 const kindLabels: Record<StatementLine["kind"], string> = {
   charge: "Booking payment",
@@ -27,10 +34,17 @@ export function EarningsView() {
   const [amount, setAmount] = useState("")
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
-  if (!now || !summary) return <Skeleton className="mt-6 h-64 rounded-2xl" />
+  if (!now || !summary)
+    return (
+      <div className="mt-6 space-y-6">
+        <MentorPageHeader title="Earnings" />
+        <Skeleton className="h-64 rounded-2xl" />
+      </div>
+    )
   const cur = summary.currency
   const payouts = finance.payouts.filter((payout) => payout.mentorSlug === DEMO_MENTOR_SLUG)
   const lines = statement(finance, DEMO_MENTOR_SLUG)
+  const monthly = earningsByMonth(finance, DEMO_MENTOR_SLUG, now)
   const hasSamples = finance.orders.some((order) => order.sample && order.mentorSlug === DEMO_MENTOR_SLUG)
 
   const request = () => {
@@ -57,12 +71,10 @@ export function EarningsView() {
 
   return (
     <div className="mt-6 space-y-10">
-      <p role="note" className="flex gap-2.5 rounded-xl bg-warning-soft p-3 text-sm text-warning ring-1 ring-warning/20">
-        <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        <span>
-          <span className="font-medium">Demo mode.</span> Figures come from simulated payments{hasSamples && " and sample bookings"}. Payouts are simulated too: no money is ever sent.
-        </span>
-      </p>
+      <div className="space-y-4">
+        <MentorPageHeader title="Earnings" description="What you have earned from bookings, what is ready to pay out, and every payment behind it." />
+        <DemoNotice label="Demo mode.">Figures come from simulated payments{hasSamples && " and sample bookings"}. Payouts are simulated too: no money is ever sent.</DemoNotice>
+      </div>
 
       <section aria-labelledby="earned">
         <h2 id="earned" className="text-subheading">
@@ -77,13 +89,21 @@ export function EarningsView() {
           Commission is set by MentorBridge and can&apos;t be changed from your account. Refunds are deducted from the figures above.
           {summary.refunded > 0 && ` Refunded so far: ${formatPrice(summary.refunded, cur)}.`}
         </p>
+        <BarChart
+          className="mt-4"
+          title="Estimated earnings by month, last 6 months"
+          description="Your share of each month's payments, after refunds. Payouts don't change earnings."
+          valueLabel="Estimated earnings"
+          formatValue={(value) => formatPrice(value, cur)}
+          data={monthly.map((item) => ({ key: item.month, label: monthLabel.format(new Date(`${item.month}-15T12:00:00Z`)), value: item.earnings }))}
+        />
       </section>
 
       <section aria-labelledby="payouts">
         <h2 id="payouts" className="text-subheading">
           Payouts
         </h2>
-        <dl className="mt-4 grid grid-cols-3 gap-3">
+        <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {money.map((item) => (
             <Tile key={item.label} {...item} currency={cur} />
           ))}
@@ -107,9 +127,10 @@ export function EarningsView() {
           <p className="text-xs text-muted-foreground">Leave blank to request everything available. Minimum {formatPrice(MIN_PAYOUT, cur)}.</p>
         </form>
         {message && (
-          <p role={message.tone === "error" ? "alert" : "status"} className={cn("mt-3 rounded-xl p-3 text-sm", message.tone === "error" ? "bg-warning-soft text-warning" : "bg-success-soft text-success")}>
-            {message.text}
-          </p>
+          <Alert variant={message.tone === "error" ? "destructive" : "success"} role={message.tone === "error" ? "alert" : "status"} className="mt-3">
+            {message.tone === "error" ? <CircleAlertIcon aria-hidden="true" /> : <CircleCheckIcon aria-hidden="true" />}
+            <AlertDescription className="text-current">{message.text}</AlertDescription>
+          </Alert>
         )}
 
         {payouts.length > 0 ? (
@@ -119,9 +140,7 @@ export function EarningsView() {
                 <span className="font-medium">{payout.id}</span>
                 <span className="text-muted-foreground">Requested {formatDate(payout.requestedAt)}</span>
                 <span className="ml-auto font-semibold">{formatPrice(payout.amount, payout.currency)}</span>
-                <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", payout.status === "paid" ? "bg-success-soft text-success" : "bg-warning-soft text-warning")}>
-                  {payout.status === "paid" ? `Paid (demo) ${payout.paidAt ? formatDate(payout.paidAt) : ""}` : "Pending"}
-                </span>
+                <Badge tone={payout.status === "paid" ? "success" : "warning"}>{payout.status === "paid" ? `Paid (demo) ${payout.paidAt ? formatDate(payout.paidAt) : ""}` : "Pending"}</Badge>
                 {payout.status === "pending" && (
                   <Button variant="outline" size="sm" onClick={() => settleDemoPayout(actor, payout.id)}>
                     Complete demo payout<span className="sr-only"> {payout.id}</span>

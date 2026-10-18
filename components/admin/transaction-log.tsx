@@ -43,7 +43,7 @@ export function TransactionLog() {
         </span>
       ),
     },
-    { id: "mode", header: "Mode", secondary: true, cell: (row) => (row.transaction.simulated ? <SampleBadge /> : <StatusBadge tone="neutral">Live</StatusBadge>) },
+    { id: "mode", header: "Mode", secondary: true, csv: (row) => (row.transaction.simulated ? "Simulated" : "Live"), cell: (row) => (row.transaction.simulated ? <SampleBadge /> : <StatusBadge tone="neutral">Live</StatusBadge>) },
   ]
 
   return (
@@ -55,6 +55,7 @@ export function TransactionLog() {
         rows={rows}
         columns={columns}
         rowKey={(row) => row.id}
+        exportFilename="transactions"
         search={(row) => `${row.transaction.id} ${row.order.id} ${row.order.title} ${row.order.mentorSlug}`}
         searchPlaceholder="Search transaction or order…"
         searchLabel="Search transactions"

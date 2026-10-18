@@ -4,7 +4,7 @@ import { useState } from "react"
 import { BanIcon, PauseIcon, PlayIcon, RotateCcwIcon } from "lucide-react"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, Feedback, ReasonPanel, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { AdminPageHeader, DemoNotice, ReasonDialog, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
 import { Button } from "@/components/ui/button"
 import { usePrincipal } from "@/lib/auth"
@@ -19,14 +19,12 @@ export function MentorModeration() {
   const source = useAdminSource()
   const principal = usePrincipal()
   const [pending, setPending] = useState<Pending>(null)
-  const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
   const mentorRows = adminMentorRows(source)
   const offerRows = adminOfferRows(source)
 
   const run = (result: { ok: boolean; message?: string }, success: string) => {
-    setFeedback(result.ok ? { tone: "ok", text: success } : { tone: "error", text: result.message ?? "That didn't work." })
-    if (result.ok) setPending(null)
+    if (notify(result, success)) setPending(null)
   }
 
   const mentorColumns: Column<AdminMentorRow>[] = [
@@ -47,6 +45,7 @@ export function MentorModeration() {
       id: "areas",
       header: "Areas",
       secondary: true,
+      csv: (row) => row.mentor.categories.map((id) => getCategory(id).label).join("; "),
       cell: (row) => <span className="text-muted-foreground">{row.mentor.categories.map((id) => getCategory(id).label).join(", ")}</span>,
     },
     {
@@ -99,7 +98,7 @@ export function MentorModeration() {
     },
     { id: "mentor", header: "Mentor", secondary: true, sortValue: (row) => row.mentor?.name ?? "", cell: (row) => <span className="text-muted-foreground">{row.mentor?.name ?? "—"}</span> },
     { id: "price", header: "Price", align: "right", sortValue: (row) => row.offer.price, cell: (row) => <span className="tabular-nums">{formatPrice(row.offer.price)}</span> },
-    { id: "catalogue", header: "Catalogue", secondary: true, cell: (row) => <StatusBadge tone={moderationTone(row.offer.status)}>{row.offer.status}</StatusBadge> },
+    { id: "catalogue", header: "Catalogue", secondary: true, csv: (row) => row.offer.status, cell: (row) => <StatusBadge tone={moderationTone(row.offer.status)}>{row.offer.status}</StatusBadge> },
     {
       id: "moderation",
       header: "Moderation",
@@ -143,6 +142,8 @@ export function MentorModeration() {
             rows={mentorRows}
             columns={mentorColumns}
             rowKey={(row) => row.mentor.slug}
+            urlKey="mentors"
+            exportFilename="mentors"
             search={(row) => `${row.mentor.name} ${row.mentor.role} ${row.mentor.city} ${row.mentor.skills.join(" ")}`}
             searchPlaceholder="Search mentors…"
             searchLabel="Search mentors"
@@ -170,6 +171,8 @@ export function MentorModeration() {
             rows={offerRows}
             columns={offerColumns}
             rowKey={(row) => row.offer.id}
+            urlKey="offers"
+            exportFilename="offers"
             search={(row) => `${row.offer.title} ${row.mentor?.name ?? ""}`}
             searchPlaceholder="Search offers…"
             searchLabel="Search offers"
@@ -197,7 +200,7 @@ export function MentorModeration() {
       </section>
 
       {pending && (
-        <ReasonPanel
+        <ReasonDialog
           title={pending.kind === "mentor" ? `Suspend ${pending.label}` : `Pause “${pending.label}”`}
           description={pending.kind === "mentor" ? "The mentor keeps their record; the reason is logged." : "The offer keeps its details; the reason is logged."}
           label="Reason"
@@ -213,7 +216,6 @@ export function MentorModeration() {
         />
       )}
 
-      {feedback && <Feedback tone={feedback.tone}>{feedback.text}</Feedback>}
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
         <SampleBadge /> marks demo records. Every action is re-checked in the domain layer, not only hidden here.

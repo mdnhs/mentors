@@ -1,10 +1,19 @@
 "use client"
 
+import { Suspense, useState } from "react"
+import { useSearchParams } from "next/navigation"
+
 import { DataTable, type Column } from "@/components/admin/data-table"
 import { AdminPageHeader, DemoNotice, StatusBadge } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { AdminAction, AdminAuditEvent } from "@/lib/admin"
+import { auditActors, filterAudit, type AuditFilter } from "@/lib/admin-selectors"
+import { replaceSearchParams } from "@/lib/admin-table"
 import { formatDate, formatTime } from "@/lib/format"
+import { isDateKey } from "@/lib/timezone"
 
 export const actionLabels: Record<AdminAction, string> = {
   "mentor-suspended": "Mentor suspended",
@@ -31,8 +40,29 @@ const categoryOf = (action: AdminAction): "moderation" | "finance" | "applicatio
 }
 
 export function AuditLog() {
+  return (
+    <Suspense fallback={<Skeleton className="h-96 rounded-2xl" />}>
+      <AuditLogInner />
+    </Suspense>
+  )
+}
+
+const filterLabels: Record<keyof AuditFilter, string> = { from: "From", to: "To", actor: "Actor" }
+
+function AuditLogInner() {
   const source = useAdminSource()
-  const rows = source.admin.audit
+  const params = useSearchParams()
+  const [filter, setFilter] = useState<AuditFilter>(() => {
+    const date = (name: string) => (isDateKey(params.get(name) ?? "") ? params.get(name)! : undefined)
+    return { from: date("from"), to: date("to"), actor: params.get("actor") ?? undefined }
+  })
+  const actors = auditActors(source.admin.audit)
+  const rows = filterAudit(source.admin.audit, filter)
+
+  const change = (name: keyof AuditFilter, value: string | undefined) => {
+    setFilter((current) => ({ ...current, [name]: value || undefined }))
+    replaceSearchParams({ [name]: value || undefined, page: undefined })
+  }
 
   const columns: Column<AdminAuditEvent>[] = [
     {
@@ -58,8 +88,8 @@ export function AuditLog() {
         </div>
       ),
     },
-    { id: "target", header: "Target", cell: (row) => <span className="font-mono text-xs">{row.target}</span> },
-    { id: "detail", header: "Detail", secondary: true, cell: (row) => <span className="text-muted-foreground">{row.detail ?? "—"}</span> },
+    { id: "target", header: "Target", csv: (row) => row.target, cell: (row) => <span className="font-mono text-xs">{row.target}</span> },
+    { id: "detail", header: "Detail", secondary: true, csv: (row) => row.detail, cell: (row) => <span className="text-muted-foreground">{row.detail ?? "—"}</span> },
   ]
 
   return (
@@ -76,7 +106,46 @@ export function AuditLog() {
         searchLabel="Search audit log"
         pageSize={15}
         initialSort={{ columnId: "at", direction: "desc" }}
-        empty="No administrative actions have been recorded yet. Actions you take in the admin workspace appear here."
+        exportFilename="audit-log"
+        pageResetKey={`${filter.from ?? ""}|${filter.to ?? ""}|${filter.actor ?? ""}`}
+        empty={source.admin.audit.length === 0 ? "No administrative actions have been recorded yet. Actions you take in the admin workspace appear here." : "No actions match these filters."}
+        toolbar={
+          <div className="flex shrink-0 flex-wrap items-end gap-3">
+            <div className="grid gap-1">
+              <Label htmlFor="audit-from" className="text-xs text-muted-foreground">
+                From
+              </Label>
+              <Input id="audit-from" type="date" value={filter.from ?? ""} max={filter.to} onChange={(event) => change("from", event.target.value)} className="h-8 w-40" />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="audit-to" className="text-xs text-muted-foreground">
+                To
+              </Label>
+              <Input id="audit-to" type="date" value={filter.to ?? ""} min={filter.from} onChange={(event) => change("to", event.target.value)} className="h-8 w-40" />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="audit-actor" className="text-xs text-muted-foreground">
+                Actor
+              </Label>
+              <select
+                id="audit-actor"
+                value={filter.actor ?? ""}
+                onChange={(event) => change("actor", event.target.value)}
+                className="h-8 rounded-lg border bg-card px-2 text-sm focus-ring"
+              >
+                <option value="">Anyone</option>
+                {actors.map((actor) => (
+                  <option key={actor} value={actor}>
+                    {actor}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        }
+        extraFilters={(Object.keys(filterLabels) as (keyof AuditFilter)[])
+          .filter((name) => filter[name])
+          .map((name) => ({ id: `audit-${name}`, label: `${filterLabels[name]}: ${filter[name]}`, onClear: () => change(name, undefined) }))}
         filters={[
           {
             id: "category",

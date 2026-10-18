@@ -41,8 +41,11 @@ function notify() {
 export function signIn(email: string, role: Role = "learner") {
   try {
     window.localStorage.setItem(KEY, JSON.stringify({ email, role }))
-  } catch {}
+  } catch {
+    return false
+  }
   notify()
+  return true
 }
 
 export function signOut() {
@@ -68,4 +71,19 @@ export function useAuth(): AuthState {
 export function usePrincipal(): Principal | null {
   const auth = useAuth()
   return auth.status === "signed-in" ? { role: auth.session.role, email: auth.session.email } : null
+}
+
+export const workspaces: Record<Role, { href: string; label: string }> = {
+  learner: { href: "/dashboard", label: "My sessions" },
+  mentor: { href: "/dashboard/mentor", label: "Mentor workspace" },
+  reviewer: { href: "/dashboard/reviewer", label: "Review queue" },
+  admin: { href: "/dashboard/admin", label: "Admin" },
+}
+
+export const homeFor = (role: Role) => workspaces[role].href
+
+// Only same-site paths, so a `next` parameter can't be used to bounce someone elsewhere.
+// Browsers read a backslash as "/" and drop tabs and newlines, so those could still point off-site.
+export function safeNext(next: string | null | undefined, fallback: string) {
+  return next && next.startsWith("/") && !next.startsWith("//") && !/[\\\s]/.test(next) ? next : fallback
 }

@@ -24,3 +24,31 @@ export function validateAvailability(value: MentorAvailability): AvailabilityErr
 }
 
 export const hasOpenTimes = (value: MentorAvailability) => value.days.length > 0 && value.times.length > 0
+
+function sameList<T>(a: T[], b: T[]) {
+  const left = [...a].sort()
+  const right = [...b].sort()
+  return left.length === right.length && left.every((item, index) => item === right[index])
+}
+
+export function availabilityEqual(a: MentorAvailability, b: MentorAvailability) {
+  return (
+    sameList(a.days, b.days) &&
+    sameList(a.times, b.times) &&
+    sameList(a.unavailableDates ?? [], b.unavailableDates ?? []) &&
+    Object.is(a.bufferMinutes ?? availabilityDefaults.bufferMinutes, b.bufferMinutes ?? availabilityDefaults.bufferMinutes) &&
+    Object.is(a.minNoticeHours ?? availabilityDefaults.minNoticeHours, b.minNoticeHours ?? availabilityDefaults.minNoticeHours) &&
+    Object.is(a.maxAdvanceDays ?? availabilityDefaults.maxAdvanceDays, b.maxAdvanceDays ?? availabilityDefaults.maxAdvanceDays)
+  )
+}
+
+export type DayOffResult = { ok: true; dates: string[] } | { ok: false; error: string }
+
+// `today` is a YYYY-MM-DD key in the mentor's timezone, so "past" means past where the mentor lives.
+export function addDayOff(dates: string[], value: string, today: string): DayOffResult {
+  const date = value.trim()
+  if (!isDateKey(date)) return { ok: false, error: "Pick a real date" }
+  if (date < today) return { ok: false, error: "Pick today or a later date" }
+  if (dates.includes(date)) return { ok: false, error: "That day is already off" }
+  return { ok: true, dates: [...dates, date].sort() }
+}

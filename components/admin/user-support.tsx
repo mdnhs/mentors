@@ -4,7 +4,7 @@ import { useState } from "react"
 import { BanIcon, CircleCheckIcon, ClockIcon, RotateCcwIcon } from "lucide-react"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, Feedback, ReasonPanel, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { AdminPageHeader, DemoNotice, ReasonDialog, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
 import { Button } from "@/components/ui/button"
 import { usePrincipal } from "@/lib/auth"
@@ -17,17 +17,21 @@ export function UserSupport() {
   const source = useAdminSource()
   const principal = usePrincipal()
   const [pending, setPending] = useState<AdminAccountRow | null>(null)
-  const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
   const accounts = adminAccountRows(source)
   const tickets = [...source.admin.tickets].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 
   const run = (result: { ok: boolean; message?: string }, success: string) => {
-    setFeedback(result.ok ? { tone: "ok", text: success } : { tone: "error", text: result.message ?? "That didn't work." })
-    if (result.ok) setPending(null)
+    if (notify(result, success)) setPending(null)
   }
 
   const setTicket = (ticket: SupportTicket, status: "open" | "pending" | "closed") => run(adminUpdateTicket(principal, ticket.id, status), `${ticket.id} marked ${status}.`)
+
+  const bulkTickets = (selected: SupportTicket[], status: "pending" | "closed") => {
+    const changed = selected.filter((ticket) => ticket.status !== status)
+    const failed = changed.map((ticket) => adminUpdateTicket(principal, ticket.id, status)).find((result) => !result.ok)
+    notify(failed ?? { ok: true }, `${changed.length} ${changed.length === 1 ? "ticket" : "tickets"} marked ${status}.`)
+  }
 
   const accountColumns: Column<AdminAccountRow>[] = [
     {
@@ -41,7 +45,7 @@ export function UserSupport() {
         </div>
       ),
     },
-    { id: "kinds", header: "Role", secondary: true, cell: (row) => <span className="text-muted-foreground">{row.kinds.join(", ")}</span> },
+    { id: "kinds", header: "Role", secondary: true, csv: (row) => row.kinds.join("; "), cell: (row) => <span className="text-muted-foreground">{row.kinds.join(", ")}</span> },
     { id: "applications", header: "Applications", align: "right", sortValue: (row) => row.applications, cell: (row) => <span className="tabular-nums">{row.applications || "—"}</span> },
     {
       id: "status",
@@ -76,7 +80,7 @@ export function UserSupport() {
     { id: "id", header: "Ticket", sortValue: (row) => row.id, cell: (row) => <span className="font-medium">{row.id}</span> },
     { id: "subject", header: "Subject", sortValue: (row) => row.subject, cell: (row) => <span>{row.subject}</span> },
     { id: "email", header: "From", secondary: true, sortValue: (row) => row.email, cell: (row) => <span className="text-muted-foreground">{row.email}</span> },
-    { id: "priority", header: "Priority", secondary: true, cell: (row) => <StatusBadge tone={row.priority === "high" ? "danger" : row.priority === "low" ? "neutral" : "accent"}>{row.priority}</StatusBadge> },
+    { id: "priority", header: "Priority", secondary: true, csv: (row) => row.priority, cell: (row) => <StatusBadge tone={row.priority === "high" ? "danger" : row.priority === "low" ? "neutral" : "accent"}>{row.priority}</StatusBadge> },
     { id: "status", header: "Status", sortValue: (row) => row.status, cell: (row) => <StatusBadge tone={moderationTone(row.status)}>{row.status}</StatusBadge> },
     { id: "updated", header: "Updated", secondary: true, sortValue: (row) => row.updatedAt, cell: (row) => <span className="whitespace-nowrap text-muted-foreground">{formatDate(row.updatedAt)}</span> },
     {
@@ -120,6 +124,8 @@ export function UserSupport() {
             rows={accounts}
             columns={accountColumns}
             rowKey={(row) => row.email}
+            urlKey="accounts"
+            exportFilename="accounts"
             search={(row) => `${row.name} ${row.email} ${row.kinds.join(" ")}`}
             searchPlaceholder="Search email or name…"
             searchLabel="Search accounts"
@@ -147,6 +153,21 @@ export function UserSupport() {
             rows={tickets}
             columns={ticketColumns}
             rowKey={(row) => row.id}
+            urlKey="tickets"
+            exportFilename="support-tickets"
+            selectable
+            bulkActions={(selected, clear) => (
+              <>
+                <Button variant="outline" size="sm" onClick={() => { bulkTickets(selected, "pending"); clear() }}>
+                  <ClockIcon aria-hidden="true" />
+                  Mark pending
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { bulkTickets(selected, "closed"); clear() }}>
+                  <CircleCheckIcon aria-hidden="true" />
+                  Close
+                </Button>
+              </>
+            )}
             search={(row) => `${row.id} ${row.subject} ${row.email}`}
             searchPlaceholder="Search ticket, subject or email…"
             searchLabel="Search tickets"
@@ -168,7 +189,7 @@ export function UserSupport() {
       </section>
 
       {pending && (
-        <ReasonPanel
+        <ReasonDialog
           title={`Restrict ${pending.email}`}
           description="The account is flagged here for the record. This demo cannot suspend a real sign-in."
           label="Reason"
@@ -180,7 +201,6 @@ export function UserSupport() {
         />
       )}
 
-      {feedback && <Feedback tone={feedback.tone}>{feedback.text}</Feedback>}
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
         <SampleBadge /> Tickets and reporter accounts are made up demo records.

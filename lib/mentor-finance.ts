@@ -1,6 +1,8 @@
 import { effectiveStatus } from "@/lib/booking-policy"
+import { DHAKA_TZ } from "@/lib/format"
 import { canManageMentor, FORBIDDEN, type Actor } from "@/lib/permissions"
 import { ledger, sumLedgers, type Order } from "@/lib/orders"
+import { dateKeyInZone } from "@/lib/timezone"
 import type { Booking } from "@/lib/types"
 
 export const MIN_PAYOUT = 500
@@ -125,4 +127,21 @@ export function statement(data: Pick<FinanceData, "orders" | "payouts">, slug: s
     if (payout.paidAt) lines.push({ id: `${payout.id}-paid`, at: payout.paidAt, kind: "payout-paid", label: `Payout ${payout.id}`, amount: -payout.amount, earningsEffect: 0 })
   }
   return lines.sort((a, b) => b.at.localeCompare(a.at))
+}
+
+export type MonthlyEarnings = { month: string; earnings: number }
+
+// Net change to estimated earnings per calendar month (YYYY-MM), for the `months` months ending this one.
+export function earningsByMonth(data: Pick<FinanceData, "orders" | "payouts">, slug: string, now: Date, months = 6, timeZone = DHAKA_TZ): MonthlyEarnings[] {
+  const totals = new Map<string, number>()
+  for (const line of statement(data, slug)) {
+    const month = dateKeyInZone(Date.parse(line.at), timeZone).slice(0, 7)
+    totals.set(month, (totals.get(month) ?? 0) + line.earningsEffect)
+  }
+  const [year, month] = dateKeyInZone(now.getTime(), timeZone).split("-").map(Number)
+  return Array.from({ length: months }, (_, index) => {
+    const date = new Date(Date.UTC(year, month - 1 - (months - 1 - index), 1))
+    const key = date.toISOString().slice(0, 7)
+    return { month: key, earnings: totals.get(key) ?? 0 }
+  })
 }

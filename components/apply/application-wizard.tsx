@@ -1,16 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import { cloneElement, useEffect, useEffectEvent, useRef, useState, type ReactElement } from "react"
 import { CheckIcon, Loader2Icon, LockIcon, PencilIcon } from "lucide-react"
 
 import { EvidenceEditor } from "@/components/apply/evidence-editor"
-import { Button } from "@/components/ui/button"
+import Link from "next/link"
+
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { startTimes, weekdays } from "@/lib/availability-settings"
 import { categories, offerTypeLabels } from "@/lib/categories"
 import { timezoneLabel } from "@/lib/format"
+import { zonePickerOptions } from "@/lib/timezones-list"
 import { steps, validateAll, validateStep, type Application, type ApplicationData, type Step, type StepErrors } from "@/lib/mentor-application"
 import type { Principal } from "@/lib/permissions"
 import { saveApplication, submitApplication } from "@/lib/store"
@@ -27,39 +30,105 @@ const labels: Record<Step | "review", string> = {
   review: "Review",
 }
 const order = [...steps, "review"] as const
-const zones = ["Asia/Dhaka", "Asia/Singapore", "Asia/Tokyo", "Europe/London", "Europe/Berlin", "America/New_York", "America/Toronto", "America/Los_Angeles", "Australia/Sydney"]
 const languages: Language[] = ["Bangla", "English", "Japanese"]
 const offerTypes: OfferType[] = ["one-on-one", "group", "review", "mentorship"]
 
+const MAX_CATEGORIES = 3
+const MAX_SKILLS = 8
+const SAVE_DELAY_MS = 400
+const savedTime = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
+
 type Props = { application: Application; principal: Principal; startAt?: Step | "review" }
+type SaveStatus = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: Date }
+
+const stepValid = (step: Step | "review", data: ApplicationData) => step === "review" || Object.keys(validateStep(step, data)).length === 0
 
 export function ApplicationWizard({ application, principal, startAt }: Props) {
   const [index, setIndex] = useState(() => Math.max(order.indexOf(startAt ?? "basic"), 0))
+  const [furthest, setFurthest] = useState(index)
   const [showErrors, setShowErrors] = useState(false)
   const [consent, setConsent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const data = application.data
+  // Edits live here first and reach the store after a pause, so typing doesn't rewrite storage on every key.
+  const [data, setData] = useState(application.data)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "idle" })
+  const [focusRequest, setFocusRequest] = useState<{ target: "heading" | "error"; id: number } | null>(null)
+  const latest = useRef(data)
+  const persisted = useRef(application.data)
+  const stepRef = useRef<HTMLDivElement>(null)
   const current = order[index]
   const errors: StepErrors = current === "review" ? {} : validateStep(current, data)
   const shown = showErrors ? errors : {}
   const requested = application.status === "info-required" ? application.infoRequest?.kinds : undefined
+  const skillCount = data.expertise.skills.split(",").map((item) => item.trim()).filter(Boolean).length
+  const categoriesFull = data.expertise.categories.length >= MAX_CATEGORIES
 
-  const save = (next: ApplicationData) => {
-    saveApplication(principal, application.id, next)
+  const flush = () => {
+    if (latest.current === persisted.current) return true
+    const result = saveApplication(principal, application.id, latest.current)
+    persisted.current = latest.current
+    if (!result.ok) {
+      setMessage(result.message)
+      setSaveStatus({ kind: "idle" })
+      return false
+    }
+    setSaveStatus({ kind: "saved", at: new Date() })
+    return true
+  }
+  const flushFromEffect = useEffectEvent(() => {
+    flush()
+  })
+
+  useEffect(() => {
+    latest.current = data
+    if (data === persisted.current) return
+    const timer = setTimeout(flushFromEffect, SAVE_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [data])
+
+  useEffect(() => {
+    window.addEventListener("pagehide", flushFromEffect)
+    return () => {
+      window.removeEventListener("pagehide", flushFromEffect)
+      flushFromEffect()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!focusRequest) return
+    const root = stepRef.current
+    if (!root) return
+    const target =
+      focusRequest.target === "error"
+        ? root.querySelector<HTMLElement>('[aria-invalid="true"], [data-invalid] button:not(:disabled), [data-invalid] input, [data-focus-error]')
+        : root.querySelector<HTMLElement>("h2")
+    target?.focus()
+  }, [focusRequest])
+
+  const requestFocus = (target: "heading" | "error") => setFocusRequest((previous) => ({ target, id: (previous?.id ?? 0) + 1 }))
+  const update = (change: (current: ApplicationData) => ApplicationData) => {
+    setData(change)
+    setSaveStatus({ kind: "saving" })
     setMessage(null)
   }
-  const patch = <K extends keyof ApplicationData>(section: K, value: Partial<ApplicationData[K]>) => save({ ...data, [section]: { ...(data[section] as object), ...value } } as ApplicationData)
+  const patch = <K extends keyof ApplicationData>(section: K, value: Partial<ApplicationData[K]>) => update((current) => ({ ...current, [section]: { ...(current[section] as object), ...value } }) as ApplicationData)
   const toggle = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
+  // Back is always open; forward only when every step before the target validates, so the stepper can't skip checks.
+  const reachable = (target: number) => target <= index || order.slice(0, target).every((step) => stepValid(step, data))
 
   const go = (target: number) => {
+    flush()
     setIndex(target)
+    setFurthest((value) => Math.max(value, target))
     setShowErrors(false)
+    requestFocus("heading")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
   const next = () => {
     if (Object.keys(errors).length > 0) {
       setShowErrors(true)
+      requestFocus("error")
       return
     }
     go(index + 1)
@@ -69,6 +138,10 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
     if (submitting) return
     setSubmitting(true)
     setMessage(null)
+    if (!flush()) {
+      setSubmitting(false)
+      return
+    }
     await new Promise((resolve) => setTimeout(resolve, 500))
     const result = submitApplication(principal, application.id)
     setSubmitting(false)
@@ -78,32 +151,44 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
       if (failing) {
         setShowErrors(true)
         setIndex(order.indexOf(failing))
+        requestFocus("error")
       }
     }
   }
 
   return (
     <div className="surface p-5 shadow-card sm:p-6">
-      <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" aria-label="Application steps">
-        {order.map((step, position) => (
-          <li key={step} className="flex items-center gap-2">
-            {position > 0 && <span className="h-px w-3 bg-border" aria-hidden="true" />}
-            <button
-              type="button"
-              onClick={() => go(position)}
-              aria-current={position === index ? "step" : undefined}
-              className={cn("flex items-center gap-1.5 rounded-md px-1.5 py-1.5 focus-ring", position === index ? "font-medium" : "text-muted-foreground")}
-            >
-              <span className={cn("flex size-5 items-center justify-center rounded-full text-xs", position < index ? "bg-success text-success-foreground" : position === index ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                {position < index ? <CheckIcon className="size-3" aria-hidden="true" /> : position + 1}
-              </span>
-              <span className={cn(position !== index && "hidden sm:inline")}>{labels[step]}</span>
-            </button>
-          </li>
-        ))}
+      <p className="text-sm font-medium text-muted-foreground">
+        Step {index + 1} of {order.length}
+      </p>
+      <ol className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" aria-label="Application steps">
+        {order.map((step, position) => {
+          const done = position !== index && position <= furthest && step !== "review" && stepValid(step, data)
+          const open = reachable(position)
+          return (
+            <li key={step} className="flex items-center gap-2">
+              {position > 0 && <span className="h-px w-3 bg-border" aria-hidden="true" />}
+              <button
+                type="button"
+                onClick={() => go(position)}
+                disabled={!open}
+                aria-current={position === index ? "step" : undefined}
+                className={cn("flex items-center gap-1.5 rounded-md px-1.5 py-1.5 focus-ring disabled:cursor-not-allowed disabled:opacity-50", position === index ? "font-medium" : "text-muted-foreground")}
+              >
+                <span className={cn("flex size-5 items-center justify-center rounded-full text-xs", done ? "bg-success text-success-foreground" : position === index ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                  {done ? <CheckIcon className="size-3" aria-hidden="true" /> : position + 1}
+                </span>
+                <span className={cn(position !== index && "sr-only sm:not-sr-only")}>{labels[step]}</span>
+                {done && <span className="sr-only">{" (complete)"}</span>}
+              </button>
+            </li>
+          )
+        })}
       </ol>
 
-      <p className="mt-3 text-xs text-muted-foreground">Your answers are saved as a draft as you type.</p>
+      <p aria-live="polite" className="mt-3 text-xs text-muted-foreground">
+        {saveStatus.kind === "saving" ? "Saving draft…" : saveStatus.kind === "saved" ? `Draft saved · ${savedTime.format(saveStatus.at)}` : "Your answers are saved as a draft as you type."}
+      </p>
 
       {application.status === "info-required" && application.infoRequest && (
         <div role="note" className="mt-4 rounded-xl bg-warning-soft p-3 text-sm text-warning">
@@ -112,7 +197,7 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
         </div>
       )}
 
-      <div className="mt-6">
+      <div ref={stepRef} className="mt-6">
         {current === "basic" && (
           <Section title="Basic information" note="We only ask for what we need to verify you. No date of birth, home address or phone number.">
             <Field id="ap-name" label="Full name" tag="Public" error={shown.fullName}>
@@ -131,7 +216,7 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
             </div>
             <Field id="ap-timezone" label="Timezone" error={shown.timezone}>
               <select id="ap-timezone" value={data.basic.timezone} onChange={(event) => patch("basic", { timezone: event.target.value })} className="h-10 rounded-lg border bg-card px-3 text-sm focus-ring">
-                {[...new Set([data.basic.timezone, ...zones])].map((zone) => (
+                {zonePickerOptions([data.basic.timezone]).map((zone) => (
                   <option key={zone} value={zone}>
                     {timezoneLabel(zone, new Date("2026-01-01T00:00:00Z"))}
                   </option>
@@ -178,10 +263,13 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
 
         {current === "expertise" && (
           <Section title="Expertise and audience">
-            <fieldset>
+            <fieldset {...groupProps("categories", shown.categories, "ap-categories-count")}>
               <legend className="text-sm font-medium">
-                Areas you can help with <span className="font-normal text-muted-foreground">(up to 3, public)</span>
+                Areas you can help with <span className="font-normal text-muted-foreground">(up to {MAX_CATEGORIES}, public)</span>
               </legend>
+              <p id="ap-categories-count" aria-live="polite" className="mt-1 text-xs text-muted-foreground">
+                {data.expertise.categories.length}/{MAX_CATEGORIES} selected{categoriesFull && ". Deselect one to choose another."}
+              </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {categories.map((category) => {
                   const on = data.expertise.categories.includes(category.id)
@@ -190,8 +278,9 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
                       key={category.id}
                       type="button"
                       aria-pressed={on}
+                      disabled={!on && categoriesFull}
                       onClick={() => patch("expertise", { categories: toggle(data.expertise.categories, category.id), track: category.track })}
-                      className={cn("inline-flex h-10 items-center gap-1.5 rounded-lg border bg-card px-3 text-sm focus-ring", on && "border-primary bg-accent/60 font-medium")}
+                      className={cn("inline-flex h-10 items-center gap-1.5 rounded-lg border bg-card px-3 text-sm focus-ring disabled:cursor-not-allowed disabled:opacity-50", on && "border-primary bg-accent/60 font-medium")}
                     >
                       <category.icon className="size-4" aria-hidden="true" />
                       {category.label}
@@ -199,15 +288,18 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
                   )
                 })}
               </div>
-              {shown.categories && <p className="mt-1 text-sm text-destructive">{shown.categories}</p>}
+              <GroupError name="categories" error={shown.categories} />
             </fieldset>
-            <Field id="ap-skills" label="Skills" tag="Public" hint="Separate with commas, up to 8." error={shown.skills}>
+            <Field id="ap-skills" label="Skills" tag="Public" hint={`Separate with commas, up to ${MAX_SKILLS}.`} error={shown.skills}>
               <Input id="ap-skills" value={data.expertise.skills} onChange={(event) => patch("expertise", { skills: event.target.value })} />
             </Field>
+            <p aria-live="polite" className={cn("-mt-2 text-xs", skillCount > MAX_SKILLS ? "font-medium text-destructive" : "text-muted-foreground")}>
+              {skillCount}/{MAX_SKILLS} skills{skillCount > MAX_SKILLS && ` — remove ${skillCount - MAX_SKILLS} to continue`}
+            </p>
             <Field id="ap-audience" label="Who do you help?" tag="Public" error={shown.audience}>
               <Input id="ap-audience" value={data.expertise.audience} onChange={(event) => patch("expertise", { audience: event.target.value })} />
             </Field>
-            <fieldset>
+            <fieldset {...groupProps("languages", shown.languages)}>
               <legend className="text-sm font-medium">Languages you mentor in</legend>
               <div className="mt-2 flex flex-wrap gap-2">
                 {languages.map((language) => (
@@ -216,7 +308,7 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
                   </button>
                 ))}
               </div>
-              {shown.languages && <p className="mt-1 text-sm text-destructive">{shown.languages}</p>}
+              <GroupError name="languages" error={shown.languages} />
             </fieldset>
             <Field id="ap-bio" label="About you" tag="Public" hint="What learners read first. 40 to 600 characters." error={shown.bio}>
               <Textarea id="ap-bio" rows={4} value={data.expertise.bio} onChange={(event) => patch("expertise", { bio: event.target.value })} className="bg-card" />
@@ -226,13 +318,13 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
 
         {current === "evidence" && (
           <Section title="Evidence of your experience" note="Reviewers use this to check your identity, education, employment and expertise. It is never shown on your profile.">
-            <EvidenceEditor items={data.evidence} errors={shown} requested={requested} onChange={(evidence) => save({ ...data, evidence })} />
+            <EvidenceEditor items={data.evidence} errors={shown} requested={requested} onChange={(change) => update((current) => ({ ...current, evidence: change(current.evidence) }))} />
           </Section>
         )}
 
         {current === "offers" && (
           <Section title="Mentorship offers and availability" note="A starting point. You'll fine-tune offers in your workspace once approved.">
-            <fieldset>
+            <fieldset {...groupProps("types", shown.types)}>
               <legend className="text-sm font-medium">What would you like to offer?</legend>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {offerTypes.map((type) => (
@@ -242,7 +334,7 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
                   </label>
                 ))}
               </div>
-              {shown.types && <p className="mt-1 text-sm text-destructive">{shown.types}</p>}
+              <GroupError name="types" error={shown.types} />
             </fieldset>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field id="ap-price" label="Starting price (৳)" error={shown.startingPrice}>
@@ -252,7 +344,7 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
                 <Input id="ap-duration" inputMode="numeric" value={data.offers.durationMinutes} onChange={(event) => patch("offers", { durationMinutes: event.target.value })} />
               </Field>
             </div>
-            <fieldset>
+            <fieldset {...groupProps("days", shown.days)}>
               <legend className="text-sm font-medium">Days you can mentor</legend>
               <div className="mt-2 flex flex-wrap gap-2">
                 {weekdays.map((day, value) => (
@@ -261,9 +353,9 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
                   </button>
                 ))}
               </div>
-              {shown.days && <p className="mt-1 text-sm text-destructive">{shown.days}</p>}
+              <GroupError name="days" error={shown.days} />
             </fieldset>
-            <fieldset>
+            <fieldset {...groupProps("times", shown.times)}>
               <legend className="text-sm font-medium">Start times (your timezone)</legend>
               <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-6">
                 {startTimes.map((time) => (
@@ -272,7 +364,7 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
                   </button>
                 ))}
               </div>
-              {shown.times && <p className="mt-1 text-sm text-destructive">{shown.times}</p>}
+              <GroupError name="times" error={shown.times} />
             </fieldset>
           </Section>
         )}
@@ -285,11 +377,21 @@ export function ApplicationWizard({ application, principal, startAt }: Props) {
           {message}
         </p>
       )}
+      <p role="alert" className="mt-4 text-sm font-medium text-destructive empty:hidden">
+        {showErrors && Object.keys(errors).length > 0 ? "Some answers on this step need attention. Fix the highlighted fields to continue." : null}
+      </p>
 
-      <div className="mt-6 flex items-center justify-between gap-3">
-        <Button type="button" variant="ghost" size="lg" disabled={index === 0 || submitting} onClick={() => go(index - 1)}>
-          Back
-        </Button>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1">
+          {index > 0 && (
+            <Button type="button" variant="ghost" size="lg" disabled={submitting} onClick={() => go(index - 1)}>
+              Back
+            </Button>
+          )}
+          <Link href="/dashboard" onClick={() => flush()} className={buttonVariants({ variant: "link", size: "lg" })}>
+            Save &amp; finish later
+          </Link>
+        </div>
         {current === "review" ? (
           <Button type="button" size="lg" disabled={!consent || submitting} onClick={submit}>
             {submitting && <Loader2Icon className="animate-spin" aria-hidden="true" />}
@@ -309,7 +411,9 @@ function Section({ title, note, children }: { title: string; note?: string; chil
   return (
     <div className="grid gap-4">
       <div>
-        <h2 className="text-subheading">{title}</h2>
+        <h2 tabIndex={-1} className="text-subheading outline-none">
+          {title}
+        </h2>
         {note && <p className="mt-1 text-sm text-muted-foreground">{note}</p>}
       </div>
       {children}
@@ -317,16 +421,42 @@ function Section({ title, note, children }: { title: string; note?: string; chil
   )
 }
 
-function Field({ id, label, tag, hint, error, children }: { id: string; label: string; tag?: "Public" | "Private"; hint?: string; error?: string; children: React.ReactNode }) {
+function Field({ id, label, tag, hint, error, children }: { id: string; label: string; tag?: "Public" | "Private"; hint?: string; error?: string; children: ReactElement<{ "aria-invalid"?: boolean; "aria-describedby"?: string }> }) {
+  const hintId = hint ? `${id}-hint` : undefined
+  const errorId = error ? `${id}-error` : undefined
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id} className="flex items-center gap-2">
         {label}
         {tag && <span className={cn("rounded px-1.5 py-0.5 text-xs font-normal", tag === "Public" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground")}>{tag === "Public" ? "Shown on profile" : "Reviewers only"}</span>}
       </Label>
-      {children}
-      {error ? <p className="text-sm text-destructive">{error}</p> : hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {cloneElement(children, { "aria-invalid": error ? true : undefined, "aria-describedby": [errorId, hintId].filter(Boolean).join(" ") || undefined })}
+      {error && (
+        <p id={errorId} className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {hint && (
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
     </div>
+  )
+}
+
+// Links a chip group's error to its fieldset, and marks it so a failed Continue can focus its first control.
+function groupProps(name: string, error: string | undefined, describedBy?: string) {
+  const ids = [error && `ap-${name}-error`, describedBy].filter(Boolean).join(" ")
+  return { "aria-describedby": ids || undefined, "data-invalid": error ? true : undefined }
+}
+
+function GroupError({ name, error }: { name: string; error?: string }) {
+  if (!error) return null
+  return (
+    <p id={`ap-${name}-error`} className="mt-1 text-sm text-destructive">
+      {error}
+    </p>
   )
 }
 
@@ -342,7 +472,9 @@ function ReviewStep({ data, go, consent, onConsent }: { data: ApplicationData; g
 
   return (
     <div className="grid gap-4">
-      <h2 className="text-subheading">Review and submit</h2>
+      <h2 tabIndex={-1} className="text-subheading outline-none">
+        Review and submit
+      </h2>
       <dl className="divide-y rounded-xl border">
         {rows.map((row) => (
           <div key={row.step} className="flex items-start justify-between gap-3 p-3 text-sm">

@@ -10,7 +10,7 @@ import { SessionBadge } from "@/components/sessions/session-badge"
 import { useSessionView } from "@/components/sessions/use-session-view"
 import { getCategory } from "@/lib/categories"
 import { getMentor } from "@/lib/data"
-import { formatDuration, formatPrice, formatTime } from "@/lib/format"
+import { formatDuration, formatPrice, formatTime, timezoneCity } from "@/lib/format"
 import type { GroupSession } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -44,7 +44,7 @@ export function SessionCard({ session: base, className }: { session: GroupSessio
           <p className="truncate font-medium">{mentor.name}</p>
           <p className="flex items-center gap-1 text-muted-foreground">
             <ClockIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            {formatTime(session.startsAt, session.timezone)} · {formatDuration(session.durationMinutes)}
+            {formatTime(session.startsAt, session.timezone)} {timezoneCity(session.timezone)} time · {formatDuration(session.durationMinutes)}
           </p>
         </div>
       </div>

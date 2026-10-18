@@ -4,7 +4,10 @@ import Link from "next/link"
 import { useRef, useState } from "react"
 import { CheckCircle2Icon, CircleAlertIcon, Loader2Icon } from "lucide-react"
 
+import { AddToCalendar } from "@/components/booking/add-to-calendar"
+import { SuccessHero } from "@/components/booking/success-hero"
 import {
+  CheckoutError,
   ContactFields,
   DemoNotice,
   DemoResultPicker,
@@ -16,6 +19,7 @@ import {
 } from "@/components/checkout/checkout-parts"
 import { PaymentStatus } from "@/components/checkout/payment-status"
 import { DateBlock } from "@/components/sessions/date-block"
+import { LocalTime } from "@/components/sessions/local-time"
 import { MeetingCard } from "@/components/sessions/meeting-card"
 import { SeatsMeter } from "@/components/sessions/seats-meter"
 import { SessionBadge, sessionStatus } from "@/components/sessions/session-badge"
@@ -23,7 +27,7 @@ import { useSessionView } from "@/components/sessions/use-session-view"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cancellationTerms } from "@/lib/offers"
-import { formatDate, formatDuration, formatPrice, formatTime, timezoneLabel } from "@/lib/format"
+import { formatDate, formatDuration, formatPrice, formatTime, timezoneCity, timezoneLabel } from "@/lib/format"
 import { payForOrder, type DemoResult } from "@/lib/payment-client"
 import { startGroupCheckout, type PaymentOutcome } from "@/lib/payment-service"
 import { quote } from "@/lib/pricing"
@@ -121,7 +125,8 @@ export function JoinPanel({ session: base }: { session: GroupSession }) {
           <div>
             <p className="font-medium">{formatDate(session.startsAt, session.timezone)}</p>
             <p className="text-sm text-muted-foreground">
-              {formatTime(session.startsAt, session.timezone)} {timezoneLabel(session.timezone, session.startsAt).split(" ")[0]} time · {formatDuration(session.durationMinutes)}
+              {formatTime(session.startsAt, session.timezone)} {timezoneCity(session.timezone)} time · {formatDuration(session.durationMinutes)}
+              <LocalTime iso={session.startsAt} timeZone={session.timezone} />
             </p>
           </div>
         </div>
@@ -159,30 +164,40 @@ export function JoinPanel({ session: base }: { session: GroupSession }) {
           <DialogHeader>
             <DialogTitle className="text-lg">Reserve your seat</DialogTitle>
             <DialogDescription>
-              {session.title} · {formatDate(session.startsAt, session.timezone)}, {formatTime(session.startsAt, session.timezone)}
+              {session.title} · {formatDate(session.startsAt, session.timezone)}, {formatTime(session.startsAt, session.timezone)}{" "}
+              {timezoneLabel(session.timezone, session.startsAt)}
             </DialogDescription>
           </DialogHeader>
           {order?.status === "confirmed" ? (
-            <div role="status" className="py-6 text-center">
-              <CheckCircle2Icon className="mx-auto size-10 text-success" aria-hidden="true" />
-              <h3 className="mt-4 text-subheading">You&apos;re in!</h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Order {order.id} · {formatPrice(order.quote.total, order.quote.currency)} (demo payment). The session link appears here 30 minutes before the start.
-              </p>
-              <Link href="/dashboard" className={cn(buttonVariants({ size: "lg" }), "mt-5")}>
-                View in my sessions
-              </Link>
+            <div className="py-6 text-center">
+              <SuccessHero
+                compact
+                heading="h3"
+                title="You're in!"
+                description={`Order ${order.id} · ${formatPrice(order.quote.total, order.quote.currency)} (demo payment). The session link appears here 30 minutes before the start.`}
+              />
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                <Link href="/dashboard" className={buttonVariants({ size: "lg" })}>
+                  View in my sessions
+                </Link>
+                <AddToCalendar
+                  event={{
+                    uid: order.bookingId,
+                    start: session.startsAt,
+                    durationMinutes: session.durationMinutes,
+                    title: session.title,
+                    description: `MentorBridge group session (order ${order.id}). The session link appears on the session page 30 minutes before the start.`,
+                    location: `${window.location.origin}/sessions/${session.id}`,
+                  }}
+                />
+              </div>
             </div>
           ) : order ? (
             <PaymentStatus order={order} onRestart={restart} />
           ) : (
             <>
               <DemoNotice />
-              {failure && (
-                <p role="alert" className="rounded-xl bg-warning-soft p-3 text-sm text-warning">
-                  {failure.message}
-                </p>
-              )}
+              {failure && <CheckoutError title="We couldn't reserve your seat." message={failure.message} action={<RecoveryAction failure={failure} />} />}
               <ContactFields value={contact} onChange={setContact} />
               <PaymentMethodPicker value={payment} onChange={setPayment} />
               <DemoResultPicker value={demoResult} onChange={setDemoResult} />
@@ -197,6 +212,21 @@ export function JoinPanel({ session: base }: { session: GroupSession }) {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+function RecoveryAction({ failure }: { failure: Extract<PaymentOutcome, { ok: false }> }) {
+  if (failure.code === "learner-busy") {
+    return (
+      <Link href="/dashboard" className="font-medium underline underline-offset-4">
+        Check my sessions
+      </Link>
+    )
+  }
+  return (
+    <Link href="/sessions" className="font-medium underline underline-offset-4">
+      Browse other sessions
+    </Link>
   )
 }
 

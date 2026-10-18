@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { Suspense } from "react"
 
 import { LoginForm } from "@/components/auth/login-form"
@@ -19,12 +18,6 @@ export default function LoginPage() {
       <Suspense>
         <LoginForm />
       </Suspense>
-      <p className="mt-8 text-center text-sm text-muted-foreground">
-        New here?{" "}
-        <Link href="/mentors" className="link">
-          Find a mentor first
-        </Link>
-      </p>
     </div>
   )
 }

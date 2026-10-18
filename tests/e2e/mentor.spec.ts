@@ -42,7 +42,8 @@ test.describe("role permissions", () => {
     await page.getByLabel("Password").fill("demo1234")
     await page.getByRole("button", { name: "Log in" }).click()
     await expect(page).toHaveURL(/\/dashboard\/mentor$/)
-    await expect(page.getByRole("heading", { name: "Mentor workspace" })).toBeVisible()
+    await expect(page.getByRole("main").getByText("Mentor workspace", { exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible()
   })
 
   test("a mentor can also open the learner dashboard", async ({ page }) => {
@@ -229,6 +230,20 @@ test.describe("managing offers", () => {
     await expect(page.getByText("18 of 40 seats left").locator("visible=true").first()).toBeVisible()
   })
 
+  test("the editor flags unsaved changes and guards the breadcrumb", async ({ page }) => {
+    await page.goto("/dashboard/mentor/offers/tanvir-career")
+    await expect(page.getByText("Unsaved changes")).toHaveCount(0)
+    await page.getByLabel("Title").fill("")
+    await expect(page.getByText("Unsaved changes")).toBeVisible()
+    await page.getByRole("button", { name: "Save changes" }).click()
+    await expect(page.getByLabel("Title")).toBeFocused()
+    await expect(page.getByLabel("Title")).toHaveAttribute("aria-describedby", "offer-title-error")
+    await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Offers" }).click()
+    await expect(page.getByRole("alertdialog")).toBeVisible()
+    await page.getByRole("button", { name: "Discard changes" }).click()
+    await expect(page).toHaveURL(/\/dashboard\/mentor\/offers$/)
+  })
+
   test("the preview dialog shows the public view of an offer", async ({ page }) => {
     await page.goto("/dashboard/mentor/offers")
     await page.getByRole("button", { name: "Preview System design mock interview" }).click()
@@ -251,22 +266,45 @@ test.describe("availability", () => {
     await page.goto("/dashboard/mentor/availability")
     await page.getByLabel("Minimum notice (hours)").fill("999")
     await expect(page.getByText("Notice must be 0 to 168 hours")).toBeVisible()
-    await expect(page.getByRole("button", { name: "Save availability" })).toBeDisabled()
+    await expect(page.getByText("Unsaved changes")).toBeVisible()
+    await page.getByRole("button", { name: "Save availability" }).click()
+    await expect(page.getByLabel("Minimum notice (hours)")).toBeFocused()
+    await expect(page.getByLabel("Minimum notice (hours)")).toHaveAttribute("aria-invalid", "true")
     await page.getByLabel("Minimum notice (hours)").fill("12")
-    await page.getByLabel("Days off").fill("2026-02-30")
-    await expect(page.getByText("Use real dates")).toBeVisible()
-    await page.getByLabel("Days off").fill("2026-12-25")
-    await page.getByRole("group", { name: "Days" }).getByRole("button", { name: "Mon" }).click()
+    await page.getByLabel("Add a day off").fill("2026-10-01")
+    await page.getByRole("button", { name: "Add", exact: true }).click()
+    await expect(page.getByText("Pick today or a later date")).toBeVisible()
+    await page.getByLabel("Add a day off").fill("2026-12-25")
+    await page.getByRole("button", { name: "Add", exact: true }).click()
+    await expect(page.getByRole("list", { name: "Days off" })).toContainText("Dec")
+    await page.getByLabel("Add a day off").fill("2026-12-25")
+    await page.getByRole("button", { name: "Add", exact: true }).click()
+    await expect(page.getByText("That day is already off")).toBeVisible()
+    await page.getByRole("group", { name: "Days", exact: true }).getByRole("button", { name: "Mon" }).click()
     await page.getByRole("button", { name: "Save availability" }).click()
     await expect(page.getByRole("status").filter({ hasText: "Availability saved" })).toBeVisible()
+    await expect(page.getByText("Unsaved changes")).toHaveCount(0)
     const saved = (await stored(page)).workspace.availability
-    expect(saved).toMatchObject({ minNoticeHours: 12, unavailableDates: ["2026-12-25"] })
+    expect(saved.minNoticeHours).toBe(12)
+    expect(saved.unavailableDates).toContain("2026-12-25")
     expect(saved.days).toContain(1)
+  })
+
+  test("leaving with unsaved changes asks first", async ({ page }) => {
+    await page.goto("/dashboard/mentor/availability")
+    await page.getByLabel("Buffer between calls (min)").fill("30")
+    await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Earnings" }).click()
+    await expect(page.getByRole("alertdialog")).toContainText("Leave without saving?")
+    await page.getByRole("button", { name: "Keep editing" }).click()
+    await expect(page).toHaveURL(/\/availability$/)
+    await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Earnings" }).click()
+    await page.getByRole("button", { name: "Discard changes" }).click()
+    await expect(page).toHaveURL(/\/earnings$/)
   })
 
   test("a mentor with no open times can't be booked for calls", async ({ page }) => {
     await page.goto("/dashboard/mentor/availability")
-    for (const day of ["Tue", "Thu", "Sat"]) await page.getByRole("group", { name: "Days" }).getByRole("button", { name: day }).click()
+    for (const day of ["Tue", "Thu", "Sat"]) await page.getByRole("group", { name: "Days", exact: true }).getByRole("button", { name: day }).click()
     await expect(page.getByText(/can't be booked/)).toBeVisible()
     await page.getByRole("button", { name: "Save availability" }).click()
     await page.goto("/dashboard/mentor")
@@ -281,6 +319,8 @@ test.describe("earnings and payouts", () => {
 
   test("derives every figure from records and offers no way to edit commission", async ({ page }) => {
     await page.goto("/dashboard/mentor/earnings")
+    await expect(page.getByRole("heading", { level: 1, name: "Earnings" })).toBeVisible()
+    await expect(page.getByRole("figure", { name: /Estimated earnings by month/ })).toBeVisible()
     const earned = section(page, "earned")
     await expect(earned.locator("div").filter({ hasText: /^Gross booking value/ })).toContainText("৳8,400")
     await expect(earned.locator("div").filter({ hasText: /^Platform commission/ })).toContainText("৳800")
@@ -312,7 +352,7 @@ test.describe("earnings and payouts", () => {
     for (const bad of ["10", "abc", "999999"]) {
       await page.getByLabel("Amount (৳)").fill(bad)
       await page.getByRole("button", { name: "Request demo payout" }).click()
-      await expect(page.locator("p[role=alert]")).toBeVisible()
+      await expect(page.getByRole("main").getByRole("alert")).toBeVisible()
     }
     expect((await stored(page)).payouts ?? []).toEqual([])
   })
@@ -336,7 +376,8 @@ test.describe("layout", () => {
     await signedIn(page, { role: "mentor" })
     for (const path of ["/dashboard/mentor", "/dashboard/mentor/offers", "/dashboard/mentor/offers/tanvir-career", "/dashboard/mentor/availability", "/dashboard/mentor/earnings"]) {
       await page.goto(path)
-      await expect(page.getByRole("heading", { name: "Mentor workspace" })).toBeVisible()
+      await expect(page.getByRole("main").getByText("Mentor workspace", { exact: true })).toBeVisible()
+      await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1)
       expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), path).toBe(false)
     }
   })

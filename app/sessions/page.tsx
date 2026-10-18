@@ -5,6 +5,8 @@ import { Container } from "@/components/site/container"
 
 export const metadata: Metadata = {
   title: "Live group sessions",
+  description: "Join live group sessions with experienced mentors: ask questions live and pay for just one seat.",
+  alternates: { canonical: "/sessions" },
 }
 
 export default function SessionsPage() {

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-import { businessMetrics } from "@/lib/admin-metrics"
+import { businessMetrics, comparePeriods, dailyTrend, percentChange } from "@/lib/admin-metrics"
 import {
   accountStatusOf,
   emptyAdminState,
@@ -16,7 +16,9 @@ import {
   updateTicket,
   type AdminState,
 } from "@/lib/admin"
-import { adminAccountRows, adminMentorRows, adminOfferRows, adminRefundOrders, adminReviewRows, type AdminSource } from "@/lib/admin-selectors"
+import { adminAccountRows, adminBookingRows, adminCancelPreview, adminMentorRows, adminOfferRows, adminRefundOrders, adminReviewRows, bookingStatusLabels, type AdminSource } from "@/lib/admin-selectors"
+import { cancelDecision, effectiveStatus } from "@/lib/booking-policy"
+import { cancellationTerms } from "@/lib/offers"
 import { demoApplications } from "@/lib/data/applications"
 import { demoDisputes, demoTickets } from "@/lib/data/admin"
 import { incomingBookings, incomingOrders } from "@/lib/data/incoming"
@@ -242,5 +244,68 @@ test.describe("selectors", () => {
     expect(adminRefundOrders(source({ orders: [order, ...incomingOrders.slice(1)] })).map((item) => item.id)).toContain(order.id)
     expect(adminRefundOrders(source({ orders: [], incoming: { bookings: [], orders: [] } }))).toEqual([])
     expect(adminReviewRows(source()).length).toBeGreaterThan(0)
+  })
+})
+
+test.describe("admin cancellation preview", () => {
+  test("shows the refund the policy would give, matching the cancellation decision", () => {
+    const rows = adminBookingRows(source())
+    const active = rows.find((row) => effectiveStatus(row.booking, NOW) === "confirmed" && cancelDecision(row.booking, NOW).allowed)
+    if (!active) throw new Error("setup: no cancellable sample booking")
+    const preview = adminCancelPreview(active, NOW)
+    const decision = cancelDecision(active.booking, NOW)
+    if (!preview.allowed || !decision.allowed) throw new Error("expected allowed")
+    expect(preview.refundPercent).toBe(decision.refundPercent)
+    expect(preview.charged).toBe(active.order?.quote.total ?? active.booking.total)
+    expect(preview.refund).toBe(Math.round((preview.charged * preview.refundPercent) / 100))
+    expect(preview.terms).toBe(cancellationTerms[preview.policy])
+  })
+
+  test("refuses bookings that can no longer be cancelled", () => {
+    const rows = adminBookingRows(source())
+    const done = rows.find((row) => effectiveStatus(row.booking, NOW) === "completed")
+    if (!done) throw new Error("setup: no completed sample booking")
+    expect(adminCancelPreview(done, NOW)).toMatchObject({ allowed: false })
+  })
+
+  test("an unpaid hold refunds nothing", () => {
+    const [first] = adminBookingRows(source())
+    const hold = { booking: { ...first.booking, status: "pending" as const, expiresAt: undefined }, order: undefined }
+    expect(adminCancelPreview(hold, NOW)).toMatchObject({ allowed: true, charged: 0, refund: 0, refundPercent: 0 })
+  })
+
+  test("every booking status has a human label", () => {
+    for (const status of ["pending", "confirmed", "in-review", "completed", "cancelled", "expired"] as const) expect(bookingStatusLabels[status]).toMatch(/^[A-Z]/)
+  })
+})
+
+test.describe("trend metrics", () => {
+  const records = { bookings: incomingBookings, orders: incomingOrders }
+
+  test("returns one point per day ending today, oldest first", () => {
+    const points = dailyTrend(records, NOW, 7)
+    expect(points).toHaveLength(7)
+    expect(points.at(-1)?.day).toBe("2026-10-18")
+    expect(points[0].day).toBe("2026-10-12")
+  })
+
+  test("daily revenue sums charges minus refunds and matches the ledger over a long window", () => {
+    const points = dailyTrend(records, NOW, 3650)
+    const metrics = businessMetrics({ ...records, mentors: getMentors() }, NOW)
+    expect(points.reduce((total, point) => total + point.revenue, 0)).toBe(metrics.netBookingValue)
+    expect(points.reduce((total, point) => total + point.bookings, 0)).toBe(incomingBookings.filter((booking) => Date.parse(booking.createdAt ?? booking.date) <= NOW.getTime()).length)
+  })
+
+  test("compares a period with the one before it", () => {
+    const comparison = comparePeriods(records, NOW, 30)
+    const sixty = dailyTrend(records, NOW, 60)
+    expect(comparison.current.revenue + comparison.previous.revenue).toBe(sixty.reduce((total, point) => total + point.revenue, 0))
+    expect(comparison.current.bookings + comparison.previous.bookings).toBe(sixty.reduce((total, point) => total + point.bookings, 0))
+  })
+
+  test("percent change has no value without a previous figure", () => {
+    expect(percentChange(150, 100)).toBe(0.5)
+    expect(percentChange(50, 100)).toBe(-0.5)
+    expect(percentChange(10, 0)).toBeNull()
   })
 })

@@ -36,10 +36,15 @@ test.describe("access", () => {
     await page.getByLabel("Password").fill("demo1234")
     await page.getByRole("button", { name: "Log in" }).click()
     await expect(page).toHaveURL(/\/dashboard\/settings$/)
-    await expect(page.getByRole("heading", { name: "Account" })).toBeVisible()
+    await expect(page.getByRole("main").getByRole("heading", { name: "Account" })).toBeVisible()
 
-    if (isMobile) await page.getByRole("button", { name: "Open menu" }).click()
-    await page.getByRole("button", { name: "Log out" }).locator("visible=true").first().click()
+    if (isMobile) {
+      await page.getByRole("button", { name: "Open menu" }).click()
+      await page.getByRole("button", { name: "Log out" }).locator("visible=true").first().click()
+    } else {
+      await page.getByRole("button", { name: /Account menu/ }).click()
+      await page.getByRole("menuitem", { name: "Log out" }).click()
+    }
     await expect(page.getByRole("heading", { name: "Log in to see your sessions" })).toBeVisible()
   })
 
@@ -48,6 +53,43 @@ test.describe("access", () => {
     await page.getByLabel("Password").fill("demo1234")
     await page.getByRole("button", { name: "Log in" }).click()
     await expect(page).toHaveURL(/\/dashboard$/)
+  })
+
+  test("a new visitor can create an account and lands on the dashboard", async ({ page }) => {
+    await page.goto("/login")
+    await page.getByRole("link", { name: "Create account" }).click()
+    await expect(page).toHaveURL(/\/signup$/)
+    await page.getByRole("textbox", { name: "Full name" }).fill("Mina Das")
+    await page.getByRole("textbox", { name: "Email" }).fill("mina@example.com")
+    await page.getByLabel("Password").locator("visible=true").fill("demo1234")
+    await page.getByRole("button", { name: "Create account" }).click()
+    await expect(page).toHaveURL(/\/dashboard$/)
+    await expect(page.getByRole("heading", { name: "Hi, Mina" })).toBeVisible()
+  })
+
+  test("the password can be shown, and a forgotten one leads to a demo reset", async ({ page }) => {
+    await page.goto("/login")
+    await page.getByLabel("Password").fill("demo1234")
+    await page.getByRole("button", { name: "Show password" }).click()
+    await expect(page.getByLabel("Password")).toHaveAttribute("type", "text")
+    await page.getByRole("link", { name: "Forgot password?" }).click()
+    // The streamed form can hydrate after the first fill and reset it, so retry until the submit lands.
+    const sent = page.getByRole("status").filter({ hasText: "If an account exists for rafi@example.com, we've sent a reset link." })
+    await expect(async () => {
+      if ((await sent.count()) === 0) {
+        await page.getByRole("textbox", { name: "Email" }).fill("rafi@example.com", { timeout: 2000 })
+        await page.getByRole("button", { name: "Send reset link" }).click({ timeout: 2000 })
+      }
+      await expect(sent).toBeVisible({ timeout: 3000 })
+    }).toPass({ timeout: 20000 })
+    await expect(page.getByRole("status")).toContainText("Demo only")
+  })
+
+  test("a learner is pointed at applying, not at the mentor workspace", async ({ page }) => {
+    await signedIn(page)
+    await page.goto("/dashboard")
+    await expect(page.getByRole("link", { name: "Apply to become a mentor" })).toHaveAttribute("href", "/become-a-mentor")
+    await expect(page.getByRole("link", { name: "Open the mentor dashboard" })).toHaveCount(0)
   })
 
   test("a booking id that isn't in this account shows nothing about it", async ({ page }) => {
@@ -112,7 +154,7 @@ test.describe("dashboard", () => {
     await expect(page).toHaveURL(/\/dashboard\/bookings\/bk-1001$/)
     await expect(page.getByRole("heading", { name: "System design mock interview" })).toBeVisible()
     await expect(page.getByText(/Full refund up to 48 hours|Free cancellation/)).toBeVisible()
-    await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Cancel session" })).toBeVisible()
     await expect(page.getByText("Demo mode: payments are simulated")).toBeVisible()
   })
 
@@ -120,7 +162,7 @@ test.describe("dashboard", () => {
     await page.goto("/dashboard")
     const saved = section(page, "saved")
     await expect(saved).toContainText("Nusrat Jahan")
-    await saved.getByRole("button", { name: "Remove Nusrat Jahan from saved" }).click()
+    await saved.getByRole("button", { name: "Save Nusrat Jahan" }).click()
     await expect(saved).not.toContainText("Nusrat Jahan")
     expect((await stored(page)).saved).not.toContain("nusrat-jahan")
     await page.goto("/mentors/nusrat-jahan")
@@ -189,14 +231,56 @@ test.describe("settings", () => {
     await expect(page.getByRole("heading", { name: "Hi, Sara" })).toBeVisible()
   })
 
-  test("notification switches persist", async ({ page }) => {
+  test("dashboard activity switches persist and say they only change the dashboard", async ({ page }) => {
     await page.goto("/dashboard/settings")
-    const tips = page.getByRole("switch", { name: "Tips and offers" })
-    await expect(tips).not.toBeChecked()
-    await tips.click()
+    await expect(page.getByRole("heading", { name: "Dashboard activity" })).toBeVisible()
+    await expect(page.getByText("These don't send emails or notifications.")).toBeVisible()
+    const updates = page.getByRole("switch", { name: "Mentor updates" })
+    await expect(updates).toBeChecked()
+    await updates.click()
     await page.reload()
-    await expect(page.getByRole("switch", { name: "Tips and offers" })).toBeChecked()
-    expect((await stored(page)).notifications.tips).toBe(true)
+    await expect(page.getByRole("switch", { name: "Mentor updates" })).not.toBeChecked()
+    expect((await stored(page)).notifications.mentorActivity).toBe(false)
+  })
+
+  test("the timezone picker is labelled and offers the common zones", async ({ page }) => {
+    await page.goto("/dashboard/settings")
+    const zone = page.getByLabel("Timezone")
+    await expect(zone).toHaveValue("Asia/Dhaka")
+    await zone.selectOption("Europe/London")
+    await page.getByRole("button", { name: "Save changes" }).click()
+    expect((await stored(page)).profile.timezone).toBe("Europe/London")
+  })
+
+  test("resetting demo data asks first, and can be backed out of", async ({ page }) => {
+    await page.goto("/dashboard/settings")
+    await page.getByLabel("Full name").fill("Sara Khan")
+    await page.getByRole("button", { name: "Save changes" }).click()
+    await page.getByRole("button", { name: "Reset demo data" }).click()
+    const dialog = page.getByRole("alertdialog")
+    await expect(dialog).toContainText("can't be undone")
+    await dialog.getByRole("button", { name: "Keep my data" }).click()
+    expect((await stored(page)).profile.name).toBe("Sara Khan")
+
+    await page.getByRole("main").getByRole("button", { name: "Reset demo data" }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Reset demo data" }).click()
+    await expect(page.getByText("Demo data reset")).toBeVisible()
+    expect((await stored(page)).profile.name).not.toBe("Sara Khan")
+  })
+
+  test("clearing sample data can be undone from the toast", async ({ page }) => {
+    await page.goto("/dashboard")
+    await page.getByRole("button", { name: "Clear sample data" }).first().click()
+    await expect(page.getByText("No sessions booked yet")).toBeVisible()
+    await page.getByRole("button", { name: "Undo" }).click()
+    await expect(section(page, "next-session")).toContainText("System design mock interview")
+  })
+
+  test("logging out from settings confirms it", async ({ page }) => {
+    await page.goto("/dashboard/settings")
+    await page.getByRole("main").getByRole("button", { name: "Log out" }).click()
+    await expect(page).toHaveURL(/\/login$/)
+    await expect(page.getByText("Logged out")).toBeVisible()
   })
 })
 

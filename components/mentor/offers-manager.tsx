@@ -2,11 +2,14 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { PlusIcon } from "lucide-react"
+import { CircleAlertIcon, PlusIcon } from "lucide-react"
 
 import { OfferPreviewCard } from "@/components/mentor/offer-preview"
 import { useMentorWorkspace } from "@/components/mentor/use-mentor-workspace"
 import { offerIcons, offerMeta } from "@/components/mentors/offer-meta"
+import { MentorPageHeader } from "@/components/mentor/mentor-shell"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { offerTypeLabels } from "@/lib/categories"
@@ -17,11 +20,11 @@ import { saveOffer } from "@/lib/store"
 import type { Offer, OfferStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-const statusTone: Record<OfferStatus, string> = {
-  published: "bg-success-soft text-success",
-  paused: "bg-warning-soft text-warning",
-  draft: "bg-muted text-muted-foreground",
-  archived: "bg-muted text-muted-foreground",
+const statusTone: Record<OfferStatus, "success" | "warning" | "neutral"> = {
+  published: "success",
+  paused: "warning",
+  draft: "neutral",
+  archived: "neutral",
 }
 
 const order: OfferStatus[] = ["published", "paused", "draft", "archived"]
@@ -39,21 +42,22 @@ export function OffersManager() {
 
   return (
     <div className="mt-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-subheading">Your offers</h2>
-          <p className="text-sm text-muted-foreground">Only live offers appear on your public profile.</p>
-        </div>
-        <Link href="/dashboard/mentor/offers/new" className={buttonVariants()}>
-          <PlusIcon aria-hidden="true" />
-          New offer
-        </Link>
-      </div>
+      <MentorPageHeader
+        title="Your offers"
+        description="Only live offers appear on your public profile."
+        actions={
+          <Link href="/dashboard/mentor/offers/new" className={buttonVariants()}>
+            <PlusIcon aria-hidden="true" />
+            New offer
+          </Link>
+        }
+      />
 
       {error && (
-        <p role="alert" className="mt-4 rounded-xl bg-warning-soft p-3 text-sm text-warning">
-          {error}
-        </p>
+        <Alert variant="destructive" className="mt-4">
+          <CircleAlertIcon aria-hidden="true" />
+          <AlertDescription className="text-current">{error}</AlertDescription>
+        </Alert>
       )}
 
       <ul className="mt-4 space-y-2">
@@ -76,7 +80,9 @@ export function OffersManager() {
                 </div>
                 <div className="text-right">
                   <p className="font-semibold">{formatPrice(offer.price)}</p>
-                  <span className={cn("mt-1 inline-block rounded-md px-2 py-0.5 text-xs font-medium", statusTone[offer.status])}>{statusLabels[offer.status]}</span>
+                  <Badge tone={statusTone[offer.status]} className="mt-1">
+                    {statusLabels[offer.status]}
+                  </Badge>
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2 pl-12">

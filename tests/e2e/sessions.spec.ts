@@ -167,7 +167,7 @@ test.describe("attendee-only meeting details", () => {
     await page.goto("/sessions/funded-masters-programs")
     await expect(page.locator("a[href*='meet.example.com']")).toHaveCount(0)
     await page.goto("/sessions")
-    await page.getByRole("button", { name: "Show past sessions" }).click()
+    await page.getByRole("switch", { name: "Show past sessions" }).click()
     await expect(card(page, "Finding Funded Master")).toContainText("Attended")
     await page.goto("/dashboard")
     await page.getByRole("tab", { name: /Past/ }).click()

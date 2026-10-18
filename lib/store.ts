@@ -176,11 +176,33 @@ export function setNotification(key: keyof NotificationPrefs, value: boolean) {
 }
 
 // Drops the made-up records so a new learner's empty states can be seen; real activity stays.
+// Returns an undo that puts back only what was removed, so changes made in between survive.
 export function clearSampleData() {
+  const before = state
   const bookings = state.bookings.filter((booking) => !booking.sample)
   const kept = new Set(bookings.map((booking) => booking.id))
   const notes = Object.fromEntries(Object.entries(state.notes).filter(([id, item]) => !item.sample && kept.has(id)))
-  setState({ ...state, bookings, notes, saved: [], incoming: { bookings: [], orders: [] }, applications: state.applications.filter((application) => !application.sample) })
+  const applications = state.applications.filter((application) => !application.sample)
+  setState({ ...state, bookings, notes, saved: [], incoming: { bookings: [], orders: [] }, applications })
+
+  return function undo() {
+    const has = <T extends { id: string }>(list: T[]) => new Set(list.map((item) => item.id))
+    const bookingIds = has(state.bookings)
+    const applicationIds = has(state.applications)
+    const incomingBookingIds = has(state.incoming.bookings)
+    const incomingOrderIds = has(state.incoming.orders)
+    setState({
+      ...state,
+      bookings: [...state.bookings, ...before.bookings.filter((booking) => !kept.has(booking.id) && !bookingIds.has(booking.id))],
+      notes: { ...Object.fromEntries(Object.entries(before.notes).filter(([id]) => !(id in notes))), ...state.notes },
+      saved: [...new Set([...before.saved, ...state.saved])],
+      incoming: {
+        bookings: [...state.incoming.bookings, ...before.incoming.bookings.filter((booking) => !incomingBookingIds.has(booking.id))],
+        orders: [...state.incoming.orders, ...before.incoming.orders.filter((order) => !incomingOrderIds.has(order.id))],
+      },
+      applications: [...state.applications, ...before.applications.filter((application) => application.sample && !applicationIds.has(application.id))],
+    })
+  }
 }
 
 export function resetDemoData() {

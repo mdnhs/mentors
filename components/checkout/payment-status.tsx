@@ -3,11 +3,14 @@
 import Link from "next/link"
 import { useState } from "react"
 import { CircleAlertIcon, Loader2Icon, RotateCcwIcon } from "lucide-react"
+import { toast } from "sonner"
 
+import { ConfirmAction } from "@/components/site/confirm-action"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { formatDate, formatPrice, formatTime } from "@/lib/format"
+import { formatDate, formatPrice, formatTime, timezoneLabel } from "@/lib/format"
 import type { Order } from "@/lib/orders"
 import { cancelBookingWithRefund, payForOrder } from "@/lib/payment-client"
+import { useAppState } from "@/lib/store"
 
 type Props = {
   order: Order
@@ -15,22 +18,22 @@ type Props = {
 }
 
 export function PaymentStatus({ order, onRestart }: Props) {
-  const [busy, setBusy] = useState(false)
+  const { bookings } = useAppState()
+  const [busy, setBusy] = useState<"retry" | "cancel" | null>(null)
   const { status, quote } = order
-  const holdEnds = `${formatDate(order.expiresAt)}, ${formatTime(order.expiresAt)}`
+  // Orders carry no timezone of their own, so the hold is shown in the zone the learner booked in.
+  const timeZone = bookings.find((booking) => booking.id === order.bookingId)?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  const holdEnds = `${formatDate(order.expiresAt, timeZone)}, ${formatTime(order.expiresAt, timeZone)} ${timezoneLabel(timeZone, order.expiresAt)}`
 
-  const retry = async () => {
+  const run = async (action: "retry" | "cancel") => {
     if (busy) return
-    setBusy(true)
-    await payForOrder(order.id, order.method, "success")
-    setBusy(false)
-  }
-
-  const cancel = async () => {
-    if (busy) return
-    setBusy(true)
-    await cancelBookingWithRefund(order.bookingId)
-    setBusy(false)
+    setBusy(action)
+    try {
+      const outcome = action === "retry" ? await payForOrder(order.id, order.method, "success") : await cancelBookingWithRefund(order.bookingId)
+      if (!outcome.ok) toast.error(outcome.message)
+    } finally {
+      setBusy(null)
+    }
   }
 
   if (status === "awaiting-payment" || status === "processing" || status === "paid") {
@@ -54,13 +57,24 @@ export function PaymentStatus({ order, onRestart }: Props) {
           You weren&apos;t charged. Your time is held until {holdEnds}, so you can try again (the demo retry succeeds).
         </p>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <Button size="lg" onClick={retry} disabled={busy}>
-            <RotateCcwIcon aria-hidden="true" />
-            Try again · {formatPrice(quote.total, quote.currency)}
+          <Button size="lg" onClick={() => run("retry")} disabled={busy !== null}>
+            {busy === "retry" ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : <RotateCcwIcon aria-hidden="true" />}
+            {busy === "retry" ? "Processing…" : `Try again · ${formatPrice(quote.total, quote.currency)}`}
           </Button>
-          <Button size="lg" variant="outline" onClick={cancel} disabled={busy}>
-            Cancel booking
-          </Button>
+          <ConfirmAction
+            trigger={
+              <Button size="lg" variant="outline" disabled={busy !== null}>
+                Cancel booking
+              </Button>
+            }
+            title="Cancel this booking?"
+            description="The time you're holding is released to others. You haven't been charged, so there's nothing to refund."
+            confirmLabel="Cancel booking"
+            busyLabel="Cancelling…"
+            cancelLabel="Keep my booking"
+            destructive
+            onConfirm={() => run("cancel")}
+          />
         </div>
       </div>
     )

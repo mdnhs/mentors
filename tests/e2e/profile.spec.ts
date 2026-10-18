@@ -130,13 +130,55 @@ test.describe("profile details", () => {
     await expect(page.locator("section[aria-labelledby=reviews] li")).toHaveCount(3)
   })
 
+  test("reviews show a star breakdown and can be filtered by session type", async ({ page }) => {
+    await page.goto("/mentors/tanvir-rahman")
+    const reviews = page.locator("section[aria-labelledby=reviews]")
+    const breakdown = reviews.getByRole("group", { name: "Rating breakdown" })
+    await expect(breakdown).toContainText("5 stars")
+    await expect(breakdown).toContainText("2 reviews")
+
+    const filters = reviews.getByRole("group", { name: "Filter reviews by session type" })
+    await filters.getByRole("button", { name: "Expert review" }).click()
+    await expect(reviews.getByRole("list", { name: "Reviews" }).getByRole("listitem")).toHaveCount(1)
+    await filters.getByRole("button", { name: "All" }).click()
+    await expect(reviews.getByRole("list", { name: "Reviews" }).getByRole("listitem")).toHaveCount(3)
+  })
+
+  test("the offer panel shows the rating next to the booking button", async ({ page }) => {
+    await page.goto("/mentors/tanvir-rahman")
+    await expect(offersPanel(page).getByRole("link", { name: /3 reviews/ })).toHaveAttribute("href", "#reviews")
+  })
+
+  test("sharing copies the profile link when the share sheet isn't available", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "clipboard permissions")
+    await context.grantPermissions(["clipboard-read", "clipboard-write"])
+    await page.addInitScript(() => Object.defineProperty(navigator, "share", { value: undefined }))
+    await page.goto("/mentors/tanvir-rahman")
+    await page.getByRole("button", { name: "Share" }).click()
+    await expect(page.getByText("Link copied")).toBeVisible()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/\/mentors\/tanvir-rahman$/)
+  })
+
+  test("profiles carry per-mentor metadata and structured data", async ({ page }) => {
+    await page.goto("/mentors/tanvir-rahman")
+    await expect(page).toHaveTitle(/Tanvir Rahman/)
+    await expect(page.locator("link[rel=canonical]")).toHaveAttribute("href", /\/mentors\/tanvir-rahman$/)
+    await expect(page.locator('meta[property="og:image"]').first()).toHaveAttribute("content", /tanvir-rahman/)
+    const jsonLd = JSON.parse((await page.locator('script[type="application/ld+json"]').textContent()) ?? "{}")
+    const types = jsonLd["@graph"].map((node: { "@type": string }) => node["@type"])
+    expect(types).toEqual(["Person", "Service"])
+    expect(jsonLd["@graph"][1].aggregateRating.reviewCount).toBe(3)
+  })
+
   test("saving a mentor persists across reloads and shows on the dashboard", async ({ page }) => {
     await page.goto("/mentors/tanvir-rahman")
     const save = page.getByRole("button", { name: "Save Tanvir Rahman" })
+    await expect(save).toHaveAttribute("aria-pressed", "false")
     await save.click()
-    await expect(page.getByRole("button", { name: "Remove Tanvir Rahman from saved" })).toHaveAttribute("aria-pressed", "true")
+    await expect(save).toHaveAttribute("aria-pressed", "true")
+    await expect(page.getByText("Saved Tanvir Rahman")).toBeVisible()
     await page.reload()
-    await expect(page.getByRole("button", { name: "Remove Tanvir Rahman from saved" })).toBeVisible()
+    await expect(save).toHaveAttribute("aria-pressed", "true")
     await page.goto("/dashboard")
     await expect(page.locator("section[aria-labelledby=saved]")).toContainText("Tanvir Rahman")
   })

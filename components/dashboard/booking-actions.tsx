@@ -2,6 +2,8 @@
 
 import Link from "next/link"
 import { useState } from "react"
+import { Loader2Icon } from "lucide-react"
+import { toast } from "sonner"
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -34,12 +36,22 @@ export function BookingActions({ booking, order, now }: { booking: Booking; orde
   const confirmCancel = async () => {
     if (busy) return
     setBusy(true)
-    const outcome = await cancelBookingWithRefund(booking.id)
-    if (outcome.ok) {
+    setError(null)
+    try {
+      const outcome = await cancelBookingWithRefund(booking.id)
+      if (!outcome.ok) {
+        setError(outcome.message)
+        return
+      }
+      const refund = outcome.order?.status === "refund-pending" ? outcome.order : null
+      if (refund) await settleDemoRefund(refund.id)
       setOpen(false)
-      if (outcome.order?.status === "refund-pending") await settleDemoRefund(outcome.order.id)
-    } else setError(outcome.message)
-    setBusy(false)
+      toast.success(refund?.refundAmount ? `Session cancelled — refund of ${formatPrice(refund.refundAmount, refund.quote.currency)} on its way` : "Session cancelled")
+    } catch {
+      setError("We couldn't cancel this session. Please try again.")
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -61,11 +73,11 @@ export function BookingActions({ booking, order, now }: { booking: Booking; orde
         ))}
       {cancel.allowed && !processing && (
         <Button variant="ghost" size="sm" onClick={() => { setError(null); setOpen(true) }}>
-          Cancel
+          Cancel session
         </Button>
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Cancel {booking.title}?</DialogTitle>
@@ -73,17 +85,16 @@ export function BookingActions({ booking, order, now }: { booking: Booking; orde
               {cancel.allowed ? refundCopy(cancel.refundPercent, order) : cancel.reason} {cancellationTerms[policyFor(booking)]}
             </DialogDescription>
           </DialogHeader>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
+          <p role="alert" className="text-sm text-destructive empty:hidden">
+            {error}
+          </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>
               Keep session
             </Button>
             <Button variant="destructive" disabled={busy} onClick={confirmCancel}>
-              {busy ? "Cancelling…" : "Cancel session"}
+              {busy && <Loader2Icon className="animate-spin" aria-hidden="true" />}
+              {busy ? "Cancelling…" : "Yes, cancel session"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -4,7 +4,7 @@ import { useState } from "react"
 import { EyeIcon, EyeOffIcon, StarIcon } from "lucide-react"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, Feedback, ReasonPanel, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { AdminPageHeader, DemoNotice, ReasonDialog, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
 import { Button } from "@/components/ui/button"
 import { usePrincipal } from "@/lib/auth"
@@ -17,13 +17,11 @@ export function ReviewModeration() {
   const source = useAdminSource()
   const principal = usePrincipal()
   const [pending, setPending] = useState<AdminReviewRow | null>(null)
-  const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
   const rows = adminReviewRows(source)
 
   const run = (result: { ok: boolean; message?: string }, success: string) => {
-    setFeedback(result.ok ? { tone: "ok", text: success } : { tone: "error", text: result.message ?? "That didn't work." })
-    if (result.ok) setPending(null)
+    if (notify(result, success)) setPending(null)
   }
 
   const columns: Column<AdminReviewRow>[] = [
@@ -54,7 +52,7 @@ export function ReviewModeration() {
         </span>
       ),
     },
-    { id: "type", header: "Type", secondary: true, cell: (row) => <span className="text-muted-foreground">{offerTypeLabels[row.review.offerType]}</span> },
+    { id: "type", header: "Type", secondary: true, csv: (row) => offerTypeLabels[row.review.offerType], cell: (row) => <span className="text-muted-foreground">{offerTypeLabels[row.review.offerType]}</span> },
     { id: "date", header: "Date", secondary: true, sortValue: (row) => row.review.date, cell: (row) => <span className="whitespace-nowrap text-muted-foreground">{formatDate(row.review.date)}</span> },
     {
       id: "status",
@@ -94,6 +92,7 @@ export function ReviewModeration() {
         rows={rows}
         columns={columns}
         rowKey={(row) => row.review.id}
+        exportFilename="reviews"
         search={(row) => `${row.review.author} ${row.review.text} ${row.mentor?.name ?? ""}`}
         searchPlaceholder="Search author, text or mentor…"
         searchLabel="Search reviews"
@@ -121,7 +120,7 @@ export function ReviewModeration() {
       />
 
       {pending && (
-        <ReasonPanel
+        <ReasonDialog
           title={`Hide review by ${pending.review.author}`}
           description={`${pending.mentor?.name ?? pending.review.mentorSlug} · ${pending.review.rating}★ · ${formatDate(pending.review.date)}`}
           label="Reason"
@@ -133,7 +132,6 @@ export function ReviewModeration() {
         />
       )}
 
-      {feedback && <Feedback tone={feedback.tone}>{feedback.text}</Feedback>}
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
         <SampleBadge /> All reviews in this demo are made up and tied to sample completed bookings.

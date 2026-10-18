@@ -7,7 +7,7 @@ import { LockIcon, ShieldAlertIcon } from "lucide-react"
 import { EmptyState } from "@/components/site/empty-state"
 import { buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useAuth } from "@/lib/auth"
+import { homeFor, useAuth } from "@/lib/auth"
 import type { Role } from "@/lib/permissions"
 
 // Keeps screens meant for one role away from the other. Like the sign-in gate, it is a UI rule in a demo,
@@ -36,19 +36,20 @@ export function RequireRole({ role, children }: { role: Role; children: React.Re
   }
 
   if (auth.session.role !== role) {
+    const article = (value: Role) => (value === "admin" ? "an admin" : `a ${value}`)
     return (
       <EmptyState
         icon={ShieldAlertIcon}
         headingAs="h1"
         title={`This area is for ${role}s`}
-        description={`You're logged in with a different role, so these tools aren't available. Log in with the ${role} demo role to open them.`}
+        description={`You're logged in as ${article(auth.session.role)} (${auth.session.email}), so these tools aren't available. Switch to the ${role} demo account to open them, or head back to your own dashboard.`}
         className="mt-8"
       >
-        <Link href={`/login?next=${encodeURIComponent(pathname)}`} className={buttonVariants()}>
-          Log in as {role === "admin" ? "an admin" : `a ${role}`}
+        <Link href={`/login?role=${role}&next=${encodeURIComponent(pathname)}`} className={buttonVariants()}>
+          Switch to {article(role)} account
         </Link>
-        <Link href="/dashboard" className={buttonVariants({ variant: "outline" })}>
-          Back to my sessions
+        <Link href={homeFor(auth.session.role)} className={buttonVariants({ variant: "outline" })}>
+          Go to my dashboard
         </Link>
       </EmptyState>
     )

@@ -4,6 +4,8 @@ import localFont from "next/font/local"
 
 import { SiteFooter } from "@/components/site/site-footer"
 import { SiteHeader } from "@/components/site/site-header"
+import { ThemeProvider } from "@/components/site/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
 import { site } from "@/lib/site"
 import "./globals.css"
 
@@ -21,20 +23,37 @@ const hindSiliguri = Hind_Siliguri({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(site.url),
   title: {
     default: `${site.name} · Mentorship for your next big step`,
     template: `%s · ${site.name}`,
   },
   description: site.description,
+  applicationName: site.name,
+  openGraph: {
+    type: "website",
+    siteName: site.name,
+    locale: "en_US",
+    title: `${site.name} · Mentorship for your next big step`,
+    description: site.description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${site.name} · Mentorship for your next big step`,
+    description: site.description,
+  },
 }
 
 export const viewport: Viewport = {
-  themeColor: "#fafaf8",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafaf8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f0f12" },
+  ],
 }
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${satoshi.variable} ${hindSiliguri.variable} h-full antialiased`}>
+    <html lang="en" className={`${satoshi.variable} ${hindSiliguri.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col has-data-[mobile-bar]:max-lg:pb-20">
         <a
           href="#main"
@@ -42,11 +61,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <SiteHeader />
-        <main id="main" className="flex-1">
-          {children}
-        </main>
-        <SiteFooter />
+        <ThemeProvider>
+          <SiteHeader />
+          <main id="main" className="flex-1">
+            {children}
+          </main>
+          <SiteFooter />
+          <Toaster position="bottom-center" closeButton />
+        </ThemeProvider>
       </body>
     </html>
   )

@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
 import { BanknoteIcon, CheckIcon } from "lucide-react"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, Feedback, MetricCard, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { AdminPageHeader, DemoNotice, MetricCard, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
+import { ConfirmAction } from "@/components/site/confirm-action"
 import { Button } from "@/components/ui/button"
 import { usePrincipal } from "@/lib/auth"
 import { adminMentorFinanceRows, adminPayoutRows, type AdminMentorFinanceRow, type AdminPayoutRow } from "@/lib/admin-selectors"
@@ -16,7 +16,6 @@ export function PayoutCenter() {
   const source = useAdminSource()
   const principal = usePrincipal()
   const now = useNow()
-  const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
   const payouts = adminPayoutRows(source)
   const finance = now ? adminMentorFinanceRows(source, now) : []
@@ -25,10 +24,7 @@ export function PayoutCenter() {
   const paidTotal = payouts.filter((row) => row.payout.status === "paid").reduce((total, row) => total + row.payout.amount, 0)
   const accrued = finance.reduce((total, row) => total + row.summary.estimatedEarnings, 0)
 
-  const settle = (row: AdminPayoutRow) => {
-    const result = adminSettlePayout(principal, row.payout.id)
-    setFeedback(result.ok ? { tone: "ok", text: `${row.payout.id} marked paid. No real transfer was made.` } : { tone: "error", text: result.message })
-  }
+  const settle = (row: AdminPayoutRow) => notify(adminSettlePayout(principal, row.payout.id), `${row.payout.id} marked paid. No real transfer was made.`)
 
   const payoutColumns: Column<AdminPayoutRow>[] = [
     { id: "id", header: "Payout", sortValue: (row) => row.payout.id, cell: (row) => <span className="font-medium">{row.payout.id}</span> },
@@ -46,16 +42,37 @@ export function PayoutCenter() {
       ),
     },
     { id: "requested", header: "Requested", secondary: true, sortValue: (row) => row.payout.requestedAt, cell: (row) => <span className="whitespace-nowrap text-muted-foreground">{formatDate(row.payout.requestedAt)}</span> },
-    { id: "paid", header: "Paid at", secondary: true, cell: (row) => <span className="whitespace-nowrap text-muted-foreground">{row.payout.paidAt ? formatDate(row.payout.paidAt) : "—"}</span> },
+    { id: "paid", header: "Paid at", secondary: true, csv: (row) => row.payout.paidAt, cell: (row) => <span className="whitespace-nowrap text-muted-foreground">{row.payout.paidAt ? formatDate(row.payout.paidAt) : "—"}</span> },
     {
       id: "action",
       header: "Action",
       cell: (row) =>
         row.payout.status === "pending" ? (
-          <Button variant="outline" size="sm" onClick={() => settle(row)}>
-            <BanknoteIcon aria-hidden="true" />
-            Mark paid
-          </Button>
+          <ConfirmAction
+            trigger={
+              <Button variant="outline" size="sm">
+                <BanknoteIcon aria-hidden="true" />
+                Mark paid<span className="sr-only"> {row.payout.id}</span>
+              </Button>
+            }
+            title={`Mark payout ${row.payout.id} as paid?`}
+            description={
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-left">
+                <dt>Payout</dt>
+                <dd className="text-foreground">{row.payout.id}</dd>
+                <dt>Mentor</dt>
+                <dd className="text-foreground">{row.mentor?.name ?? row.payout.mentorSlug}</dd>
+                <dt>Amount</dt>
+                <dd className="font-medium text-foreground tabular-nums">{formatPrice(row.payout.amount, row.payout.currency)}</dd>
+                <dt>Requested</dt>
+                <dd className="text-foreground">{formatDate(row.payout.requestedAt)}</dd>
+                <dd className="col-span-2 mt-1 text-xs">Payouts are only paid from earnings on completed sessions, and a paid payout can&apos;t be reopened. This records a demo state change — no transfer is made.</dd>
+              </dl>
+            }
+            confirmLabel="Mark paid"
+            busyLabel="Saving…"
+            onConfirm={() => settle(row)}
+          />
         ) : (
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <CheckIcon className="size-3.5" aria-hidden="true" />
@@ -95,6 +112,8 @@ export function PayoutCenter() {
             rows={payouts}
             columns={payoutColumns}
             rowKey={(row) => row.payout.id}
+            urlKey="payouts"
+            exportFilename="payouts"
             search={(row) => `${row.payout.id} ${row.mentor?.name ?? row.payout.mentorSlug}`}
             searchPlaceholder="Search payout or mentor…"
             searchLabel="Search payouts"
@@ -122,6 +141,9 @@ export function PayoutCenter() {
             rows={finance}
             columns={financeColumns}
             rowKey={(row) => row.slug}
+            urlKey="balances"
+            exportFilename="mentor-balances"
+            loading={!now}
             search={(row) => `${row.mentor?.name ?? row.slug} ${row.slug}`}
             searchPlaceholder="Search mentor…"
             searchLabel="Search mentor balances"
@@ -130,8 +152,6 @@ export function PayoutCenter() {
           />
         </div>
       </section>
-
-      {feedback && <Feedback tone={feedback.tone}>{feedback.text}</Feedback>}
     </div>
   )
 }

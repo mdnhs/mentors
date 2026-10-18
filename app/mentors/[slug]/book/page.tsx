@@ -33,7 +33,9 @@ async function Booking({ params }: Pick<PageProps<"/mentors/[slug]/book">, "para
 
   return (
     <>
-      <BackLink href={`/mentors/${mentor.slug}`}>Back to {mentor.name}</BackLink>
+      <div className="print:hidden">
+        <BackLink href={`/mentors/${mentor.slug}`}>Back to {mentor.name}</BackLink>
+      </div>
       <BookingFlow slug={mentor.slug} />
     </>
   )

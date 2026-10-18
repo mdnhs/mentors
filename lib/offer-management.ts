@@ -32,6 +32,8 @@ export const defaultPolicy: Record<OfferType, CancellationPolicy> = {
   group: "group",
 }
 
+export const draftsEqual = (a: OfferDraft, b: OfferDraft) => (Object.keys(a) as (keyof OfferDraft)[]).every((key) => a[key] === b[key])
+
 export function emptyDraft(type: OfferType): OfferDraft {
   return {
     type,

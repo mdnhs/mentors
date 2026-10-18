@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test"
 
-import { validateAvailability } from "@/lib/availability-settings"
+import { addDayOff, availabilityEqual, validateAvailability } from "@/lib/availability-settings"
 import { getMentor } from "@/lib/data"
 import { incomingBookings, incomingOrders } from "@/lib/data/incoming"
 import { mentorBookings, mentorTasks, splitMentorBookings } from "@/lib/mentor-dashboard"
-import { requestPayout, settlePayout, statement, summarize, type FinanceData, type Payout } from "@/lib/mentor-finance"
-import { draftToOffer, emptyDraft, manageOffers, offerToDraft, validateDraft, type OfferDraft } from "@/lib/offer-management"
+import { earningsByMonth, requestPayout, settlePayout, statement, summarize, type FinanceData, type Payout } from "@/lib/mentor-finance"
+import { draftsEqual, draftToOffer, emptyDraft, manageOffers, offerToDraft, validateDraft, type OfferDraft } from "@/lib/offer-management"
 import { advance, withRefund } from "@/lib/orders"
 import { cancelWithRefund } from "@/lib/payment-service"
 import { actorFor, DEMO_MENTOR_SLUG } from "@/lib/permissions"
@@ -336,5 +336,49 @@ test.describe("mentor workspace logic", () => {
   test("a mentor with nothing to do gets no tasks", () => {
     const quiet = live({ bookings: [], summary: { ...summarize(data(), DEMO_MENTOR_SLUG, NOW), availableForPayout: 0 } })
     expect(mentorTasks(quiet, NOW)).toEqual([])
+  })
+})
+
+test.describe("availability editor helpers", () => {
+  const base = { days: [1, 3], times: ["09:00", "18:00"], bufferMinutes: 15, minNoticeHours: 24, maxAdvanceDays: 30, unavailableDates: ["2026-12-25"] }
+
+  test("compares availability regardless of order and default values", () => {
+    expect(availabilityEqual(base, { ...base, days: [3, 1], times: ["18:00", "09:00"] })).toBe(true)
+    expect(availabilityEqual({ days: [1], times: ["09:00"] }, { days: [1], times: ["09:00"], bufferMinutes: 15, minNoticeHours: 24, maxAdvanceDays: 30, unavailableDates: [] })).toBe(true)
+    expect(availabilityEqual(base, { ...base, minNoticeHours: 12 })).toBe(false)
+    expect(availabilityEqual(base, { ...base, unavailableDates: [] })).toBe(false)
+    expect(availabilityEqual(base, { ...base, bufferMinutes: Number.NaN })).toBe(false)
+  })
+
+  test("adds a day off only when it is real, upcoming and new", () => {
+    expect(addDayOff([], "2026-02-30", "2026-10-18")).toEqual({ ok: false, error: "Pick a real date" })
+    expect(addDayOff([], "", "2026-10-18")).toEqual({ ok: false, error: "Pick a real date" })
+    expect(addDayOff([], "2026-10-17", "2026-10-18")).toEqual({ ok: false, error: "Pick today or a later date" })
+    expect(addDayOff(["2026-12-25"], "2026-12-25", "2026-10-18")).toEqual({ ok: false, error: "That day is already off" })
+    expect(addDayOff(["2026-12-31"], "2026-10-18", "2026-10-18")).toEqual({ ok: true, dates: ["2026-10-18", "2026-12-31"] })
+  })
+})
+
+test.describe("offer draft changes", () => {
+  test("a draft equals its saved snapshot until a field changes", () => {
+    const saved = emptyDraft("one-on-one")
+    expect(draftsEqual({ ...saved }, saved)).toBe(true)
+    expect(draftsEqual({ ...saved, title: "New title" }, saved)).toBe(false)
+    expect(draftsEqual(emptyDraft("mentorship"), saved)).toBe(false)
+  })
+})
+
+test.describe("earnings over time", () => {
+  test("buckets earnings by month and ends with the current month", () => {
+    const data = { orders: incomingOrders, payouts: [] }
+    const months = earningsByMonth(data, DEMO_MENTOR_SLUG, new Date("2026-10-18T06:00:00Z"))
+    expect(months).toHaveLength(6)
+    expect(months.map((item) => item.month)).toEqual(["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"])
+    const total = statement(data, DEMO_MENTOR_SLUG).filter((line) => line.at >= "2026-04-30T18:00:00Z").reduce((sum, line) => sum + line.earningsEffect, 0)
+    expect(months.reduce((sum, item) => sum + item.earnings, 0)).toBe(total)
+  })
+
+  test("crosses a year boundary", () => {
+    expect(earningsByMonth({ orders: [], payouts: [] }, DEMO_MENTOR_SLUG, new Date("2027-02-10T00:00:00Z"), 3).map((item) => item.month)).toEqual(["2026-12", "2027-01", "2027-02"])
   })
 })

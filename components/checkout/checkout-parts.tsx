@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
-import { CreditCardIcon, InfoIcon, SmartphoneIcon } from "lucide-react"
+import { useState, type ReactNode } from "react"
+import { CircleAlertIcon, CreditCardIcon, InfoIcon, SmartphoneIcon } from "lucide-react"
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatPrice } from "@/lib/format"
@@ -154,5 +155,28 @@ export function ContactFields({ value, onChange }: { value: Contact; onChange: (
         )
       })}
     </div>
+  )
+}
+
+export function CheckoutError({
+  title = "We couldn't book that.",
+  message,
+  action,
+  className,
+}: {
+  title?: string
+  message: string
+  action?: ReactNode
+  className?: string
+}) {
+  return (
+    <Alert className={cn("rounded-xl border-warning/20 bg-warning-soft p-4 text-warning *:data-[slot=alert-description]:text-warning", className)}>
+      <CircleAlertIcon aria-hidden="true" />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>
+        <span className="block">{message}</span>
+        {action && <div className="mt-2">{action}</div>}
+      </AlertDescription>
+    </Alert>
   )
 }

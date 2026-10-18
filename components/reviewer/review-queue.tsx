@@ -2,8 +2,9 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { InboxIcon, InfoIcon } from "lucide-react"
+import { InboxIcon } from "lucide-react"
 
+import { DemoNotice } from "@/components/admin/parts"
 import { SamplePill } from "@/components/dashboard/booking-row"
 import { ApplicationStatusBadge } from "@/components/reviewer/status-badge"
 import { EmptyState } from "@/components/site/empty-state"
@@ -36,12 +37,9 @@ export function ReviewQueue({ basePath = "/dashboard/reviewer" }: { basePath?: s
       <h1 className="text-title">Application review</h1>
       <p className="mt-1 text-sm text-muted-foreground">{principal?.role === "admin" ? "Demo admin account" : "Demo reviewer account"} · {principal?.email}</p>
 
-      <p role="note" className="mt-5 flex gap-2.5 rounded-xl bg-warning-soft p-3 text-sm text-warning ring-1 ring-warning/20">
-        <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        <span>
-          <span className="font-medium">Demo review desk.</span> Applicants marked Sample are made up, and their documents are placeholders. Evidence you open is logged to the audit trail.
-        </span>
-      </p>
+      <DemoNotice label="Demo review desk." className="mt-5">
+        Applicants marked Sample are made up, and their documents are placeholders. Evidence you open is logged to the audit trail.
+      </DemoNotice>
 
       <div className="scrollbar-none -mx-4 mt-5 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label="Filter applications">
         {filters.map((item) => (

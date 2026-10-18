@@ -1,6 +1,8 @@
 "use client"
 
 import Link from "next/link"
+import { useState } from "react"
+import { toast } from "sonner"
 
 import { BookingActions } from "@/components/dashboard/booking-actions"
 import { Button } from "@/components/ui/button"
@@ -11,20 +13,22 @@ import { effectiveStatus, isActive } from "@/lib/booking-policy"
 import { bookingHref } from "@/lib/dashboard"
 import { orderStatusLabels, type Order } from "@/lib/orders"
 import { resetStalledPayment, settleDemoRefund } from "@/lib/payment-client"
+import type { PaymentOutcome } from "@/lib/payment-service"
 import { offerTypeLabels } from "@/lib/categories"
 import { getMentor, getSession } from "@/lib/data"
 import { formatPrice, formatTime } from "@/lib/format"
+import { bookingStatusLabels } from "@/lib/admin-selectors"
 import { useAppState, useNow } from "@/lib/store"
 import type { Booking, BookingStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 export const statusStyles: Record<BookingStatus, { label: string; className: string }> = {
-  pending: { label: "Pending", className: "bg-warning-soft text-warning" },
-  confirmed: { label: "Confirmed", className: "bg-accent text-accent-foreground" },
-  "in-review": { label: "In review", className: "bg-warning-soft text-warning" },
-  completed: { label: "Completed", className: "bg-success-soft text-success" },
-  cancelled: { label: "Cancelled", className: "bg-muted text-muted-foreground" },
-  expired: { label: "Expired", className: "bg-muted text-muted-foreground" },
+  pending: { label: bookingStatusLabels.pending, className: "bg-warning-soft text-warning" },
+  confirmed: { label: bookingStatusLabels.confirmed, className: "bg-accent text-accent-foreground" },
+  "in-review": { label: bookingStatusLabels["in-review"], className: "bg-warning-soft text-warning" },
+  completed: { label: bookingStatusLabels.completed, className: "bg-success-soft text-success" },
+  cancelled: { label: bookingStatusLabels.cancelled, className: "bg-muted text-muted-foreground" },
+  expired: { label: bookingStatusLabels.expired, className: "bg-muted text-muted-foreground" },
 }
 
 type BookingRowProps = {
@@ -47,6 +51,8 @@ const paymentTone: Partial<Record<Order["status"], string>> = {
 export function BookingRow({ booking, person }: BookingRowProps) {
   const now = useNow()
   const { orders, bookings, cancelledSessions } = useAppState()
+  const [paymentBusy, setPaymentBusy] = useState(false)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
   const order = orders.find((item) => item.bookingId === booking.id)
   const mentor = getMentor(booking.mentorSlug)
   if (!mentor) return null
@@ -58,6 +64,21 @@ export function BookingRow({ booking, person }: BookingRowProps) {
   const status = sessionCancelled ? { label: "Session cancelled", className: statusStyles.cancelled.className } : unpaid ? { label: orderStatusLabels[order.status], className: statusStyles.pending.className } : statusStyles[stateStatus]
   const when = booking.kind === "review" ? (stateStatus === "completed" ? "Delivered" : "Feedback due") : formatTime(booking.date, booking.timezone)
   const active = isActive(stateStatus)
+
+  const runPaymentAction = async (action: () => Promise<PaymentOutcome>, success: string) => {
+    if (paymentBusy) return
+    setPaymentBusy(true)
+    setPaymentError(null)
+    try {
+      const outcome = await action()
+      if (outcome.ok) toast.success(success)
+      else setPaymentError(outcome.message)
+    } catch {
+      setPaymentError("Something went wrong. Please try again.")
+    } finally {
+      setPaymentBusy(false)
+    }
+  }
 
   return (
     <li className="p-4">
@@ -98,30 +119,33 @@ export function BookingRow({ booking, person }: BookingRowProps) {
         )}
       </div>
       {order && !person && (order.status === "refund-pending" || order.status === "refunded" || order.status === "processing" || order.status === "payment-failed") && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 pl-18 text-sm">
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm sm:pl-18">
           <span className={cn("font-medium", paymentTone[order.status])}>
             {orderStatusLabels[order.status]}
             {order.refundAmount !== undefined && ` · ${formatPrice(order.refundAmount, order.quote.currency)}`}
           </span>
           {order.status === "refund-pending" && (
-            <Button variant="outline" size="sm" onClick={() => settleDemoRefund(order.id)}>
+            <Button variant="outline" size="sm" disabled={paymentBusy} onClick={() => runPaymentAction(() => settleDemoRefund(order.id), "Demo refund completed")}>
               Complete demo refund
             </Button>
           )}
           {order.status === "processing" && (
-            <Button variant="outline" size="sm" onClick={() => resetStalledPayment(order.id)}>
+            <Button variant="outline" size="sm" disabled={paymentBusy} onClick={() => runPaymentAction(() => resetStalledPayment(order.id), "Payment reset — you can try paying again")}>
               Payment didn&apos;t finish? Reset
             </Button>
           )}
+          <p role="alert" className="basis-full text-destructive empty:hidden">
+            {paymentError}
+          </p>
         </div>
       )}
       {groupSession && !person && stateStatus === "confirmed" && (
-        <div className="mt-3 pl-18">
+        <div className="mt-3 sm:pl-18">
           <MeetingCard session={groupSession} bookings={bookings} />
         </div>
       )}
       {now && !person && active && (
-        <div className="mt-3 pl-18">
+        <div className="mt-3 sm:pl-18">
           <BookingActions booking={booking} order={order} now={now} />
         </div>
       )}

@@ -49,9 +49,9 @@ export function TrackPanels() {
                     <li key={topic.id}>
                       <Link
                         href={`/mentors?category=${topic.id}`}
-                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3 text-sm transition-colors hover:border-foreground/30 focus-ring"
+                        className="group/topic inline-flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3 text-sm transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground focus-ring"
                       >
-                        <topic.icon className="size-4 text-muted-foreground" aria-hidden="true" />
+                        <topic.icon className="size-4 text-muted-foreground transition-colors group-hover/topic:text-accent-foreground" aria-hidden="true" />
                         {topic.label}
                       </Link>
                     </li>

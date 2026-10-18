@@ -83,7 +83,8 @@ async function reviewSara(page: Page) {
 test.describe("applying", () => {
   test("a signed-out visitor is asked to log in", async ({ page }) => {
     await page.goto("/become-a-mentor")
-    await expect(page.getByRole("heading", { name: "Log in to apply" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Create an account to apply" })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Create account to start" })).toHaveAttribute("href", "/signup?next=%2Fbecome-a-mentor")
     await expect(page.locator("#ap-name")).toHaveCount(0)
   })
 
@@ -110,6 +111,51 @@ test.describe("applying", () => {
     await expect(page.getByText("Enter a full web address")).toBeVisible()
   })
 
+  test("the stepper shows progress and can't jump past an unfinished step", async ({ page }) => {
+    await actAs(page, "learner", SARA, "/become-a-mentor")
+    await page.getByRole("button", { name: "Start application" }).click()
+    await expect(page.getByText("Step 1 of 6")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Back", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Save & finish later" })).toHaveAttribute("href", "/dashboard")
+    const steps = page.getByRole("list", { name: "Application steps" })
+    await expect(steps.getByRole("button", { name: /Expertise/ })).toBeDisabled()
+
+    await next(page)
+    await expect(page.locator("#ap-name")).toBeFocused()
+    await expect(page.locator("#ap-name")).toHaveAttribute("aria-invalid", "true")
+    await expect(page.locator("#ap-name")).toHaveAttribute("aria-describedby", "ap-name-error")
+
+    await page.locator("#ap-name").fill("Sara Khan")
+    await page.locator("#ap-city").fill("Dhaka")
+    await next(page)
+    await expect(page.getByText("Step 2 of 6")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Professional or academic background" })).toBeFocused()
+    await expect(steps.getByRole("button", { name: /Basics \(complete\)/ })).toBeVisible()
+    await steps.getByRole("button", { name: /Basics/ }).click()
+    await expect(page.getByRole("heading", { name: "Basic information" })).toBeVisible()
+  })
+
+  test("areas of expertise stop at three, with a live count", async ({ page }) => {
+    await actAs(page, "learner", SARA, "/become-a-mentor")
+    await page.getByRole("button", { name: "Start application" }).click()
+    await page.locator("#ap-name").fill("Sara Khan")
+    await page.locator("#ap-city").fill("Dhaka")
+    await next(page)
+    await page.locator("#ap-role").fill("Backend Engineer")
+    await page.locator("#ap-org").fill("Fintech company")
+    await page.locator("#ap-years").fill("5")
+    await page.locator("#ap-education").fill("BSc in Computer Science")
+    await next(page)
+    const areas = page.getByRole("group", { name: /Areas you can help with/ })
+    const chips = areas.getByRole("button")
+    for (let position = 0; position < 3; position++) await chips.nth(position).click()
+    await expect(areas).toContainText("3/3 selected")
+    await expect(chips.nth(3)).toBeDisabled()
+    await chips.nth(0).click()
+    await expect(areas).toContainText("2/3 selected")
+    await expect(chips.nth(3)).toBeEnabled()
+  })
+
   test("only the basics are collected, and private fields are labelled", async ({ page }) => {
     await actAs(page, "learner", SARA, "/become-a-mentor")
     await page.getByRole("button", { name: "Start application" }).click()
@@ -124,6 +170,7 @@ test.describe("applying", () => {
     await actAs(page, "learner", SARA, "/become-a-mentor")
     await page.getByRole("button", { name: "Start application" }).click()
     await page.locator("#ap-name").fill("Sara Khan")
+    await expect(page.getByText(/Draft saved · /)).toBeVisible()
     await page.reload()
     await expect(page.locator("#ap-name")).toHaveValue("Sara Khan")
     const app = (await stored(page)).applications.find((item: { applicantEmail: string }) => item.applicantEmail === SARA)
@@ -158,8 +205,15 @@ test.describe("applying", () => {
     await next(page)
     await expect(page.getByText("Add an ID document for the identity check")).toBeVisible()
     await addFile(page, "identity", "National ID", "id.pdf")
+    await expect(page.locator("#evidence-file")).toHaveValue("")
+    await expect(page.getByRole("button", { name: "Add evidence" })).toBeDisabled()
     await next(page)
     await expect(page.getByText("Add evidence of your education, employment or expertise")).toBeVisible()
+
+    await page.getByRole("button", { name: "Remove National ID" }).click()
+    await expect(page.getByRole("list", { name: "Evidence you've added" })).toHaveCount(0)
+    await page.getByRole("button", { name: "Undo" }).click()
+    await expect(page.getByRole("list", { name: "Evidence you've added" })).toContainText("National ID")
   })
 
   test("submitting needs consent, then locks the application and keeps only file details", async ({ page }) => {
@@ -271,6 +325,7 @@ test.describe("reviewing", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Give the applicant a reason" })).toBeVisible()
     await page.getByLabel("Reason shown to the applicant").fill("We couldn't confirm the enrolment letter.")
     await page.getByRole("button", { name: "Not approve" }).last().click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Not approve" }).click()
     await expect(page.getByRole("status").filter({ hasText: "not approved" })).toBeVisible()
     await expect(page.getByRole("radio", { name: "Approve" })).toHaveCount(0)
     await expect(page.getByRole("heading", { name: "Not approved" })).toBeVisible()
@@ -351,6 +406,7 @@ test.describe("end to end", () => {
     await page.getByLabel("Reason shown to the applicant").fill("We couldn't confirm your employment.")
     await page.getByLabel("Internal note (reviewers only)").fill("INTERNAL-ONLY-NOTE")
     await page.getByRole("button", { name: "Not approve" }).last().click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Not approve" }).click()
     await expect(page.getByRole("status").filter({ hasText: "not approved" })).toBeVisible()
 
     await actAs(page, "learner", SARA, "/become-a-mentor")

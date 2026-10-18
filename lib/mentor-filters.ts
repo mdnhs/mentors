@@ -195,6 +195,27 @@ export function filterMentors(filters: MentorFilters): MentorResult[] {
   return scored.map(({ mentor, price }) => ({ mentor, price }))
 }
 
+// Two full rows on the four-column desktop grid.
+export const MENTOR_PAGE_SIZE = 8
+
+export function pageFromParams(params: URLSearchParams) {
+  const page = Number(params.get("page"))
+  return Number.isInteger(page) && page > 1 ? page : 1
+}
+
+const byRating = (a: Mentor, b: Mentor) => {
+  const ra = getRating(a.slug)
+  const rb = getRating(b.slug)
+  return (rb?.average ?? 0) - (ra?.average ?? 0) || (rb?.count ?? 0) - (ra?.count ?? 0)
+}
+
+// Hand-picked slugs can be delisted or renamed, so missing ones are topped up with the best-rated listed mentors.
+export function pickListedMentors(slugs: string[], count: number) {
+  const picked = unique(slugs).flatMap((slug) => mentors.filter((mentor) => mentor.slug === slug))
+  const rest = mentors.filter((mentor) => !picked.includes(mentor)).sort(byRating)
+  return [...picked, ...rest].slice(0, count)
+}
+
 export type ActiveFilter = { key: string; label: string; clear: (filters: MentorFilters) => MentorFilters }
 
 // Filters that live in the filter panel; search, track and category are always visible on the page.

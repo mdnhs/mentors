@@ -6,20 +6,22 @@ import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { MentorPhoto } from "@/components/mentors/mentor-photo"
 import { Container } from "@/components/site/container"
 import { buttonVariants } from "@/components/ui/button"
-import { getMentor, getSessions } from "@/lib/data"
+import { getSessions } from "@/lib/data"
 import { formatPrice } from "@/lib/format"
+import { pickListedMentors } from "@/lib/mentor-filters"
 import { getListedMentors } from "@/lib/offers"
 import { cn } from "@/lib/utils"
 
-const portraits = [
-  { slug: "nusrat-jahan", caption: "ML Engineer, Dhaka" },
-  { slug: "arif-hossain", caption: "PhD Researcher, Munich" },
-  { slug: "sadia-islam", caption: "Product Designer, Toronto" },
-]
+const captions: Record<string, string> = {
+  "nusrat-jahan": "ML Engineer, Dhaka",
+  "arif-hossain": "PhD Researcher, Munich",
+  "sadia-islam": "Product Designer, Toronto",
+}
 
 export function Hero() {
   const mentors = getListedMentors()
   const fromPrice = Math.min(...getSessions().map((session) => session.price))
+  const portraits = pickListedMentors(Object.keys(captions), 3)
 
   return (
     <section>
@@ -63,32 +65,29 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="grid h-72 grid-cols-5 grid-rows-2 gap-2 sm:h-96 sm:gap-3 lg:col-span-6 lg:h-120" aria-label="Featured mentor portraits">
-          {portraits.map((portrait, index) => {
-            const mentor = getMentor(portrait.slug)!
-            return (
-              <Link
-                key={portrait.slug}
-                href={`/mentors/${mentor.slug}`}
-                className={cn(
-                  "group relative overflow-hidden rounded-2xl bg-muted focus-ring sm:rounded-3xl",
-                  index === 0 ? "col-span-3 row-span-2" : "col-span-2"
-                )}
-              >
-                <MentorPhoto
-                  src={mentor.photo}
-                  name={mentor.name}
-                  alt={`${mentor.name}, ${mentor.role}`}
-                  priority={index === 0}
-                  sizes={index === 0 ? "(min-width: 1024px) 340px, 60vw" : "(min-width: 1024px) 220px, 40vw"}
-                  className="transition duration-500 group-hover:scale-105"
-                />
-                <span className="absolute inset-x-2 bottom-2 hidden truncate rounded-lg bg-white/90 px-2.5 py-1.5 text-xs font-medium backdrop-blur sm:block">
-                  {mentor.name.split(" ")[0]} · {portrait.caption}
-                </span>
-              </Link>
-            )
-          })}
+        <div className="grid h-72 grid-cols-5 grid-rows-2 gap-2 sm:h-96 sm:gap-3 lg:col-span-6 lg:h-120" role="group" aria-label="Featured mentor portraits">
+          {portraits.map((mentor, index) => (
+            <Link
+              key={mentor.slug}
+              href={`/mentors/${mentor.slug}`}
+              className={cn(
+                "group relative overflow-hidden rounded-2xl bg-muted focus-ring sm:rounded-3xl",
+                index === 0 ? "col-span-3 row-span-2" : "col-span-2"
+              )}
+            >
+              <MentorPhoto
+                src={mentor.photo}
+                name={mentor.name}
+                alt={`${mentor.name}, ${mentor.role}`}
+                priority={index === 0}
+                sizes={index === 0 ? "(min-width: 1024px) 340px, 60vw" : "(min-width: 1024px) 220px, 40vw"}
+                className="transition duration-500 group-hover:scale-105"
+              />
+              <span className="absolute inset-x-2 bottom-2 hidden truncate rounded-lg bg-background/90 px-2.5 py-1.5 text-xs font-medium backdrop-blur sm:block">
+                {mentor.name.split(" ")[0]} · {captions[mentor.slug] ?? `${mentor.role}, ${mentor.city}`}
+              </span>
+            </Link>
+          ))}
         </div>
       </Container>
     </section>

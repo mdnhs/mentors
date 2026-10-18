@@ -22,7 +22,21 @@ export function UpcomingSessions() {
     .map((session) => resolveSession(session, { cancelledSessions, sessionCapacity }))
     .filter((session) => checkEnrollment(session, bookings, now).open)
   const [next, ...rest] = open
-  if (!next) return null
+  if (!next) {
+    return (
+      <section className="py-16 sm:py-20">
+        <Container>
+          <SectionHeading title="Upcoming live sessions" description="Learn in a small group for a fraction of the price." />
+          <p className="mt-6 text-muted-foreground">
+            No group sessions are open for sign-up right now.{" "}
+            <Link href="/sessions" className="link">
+              Browse all sessions
+            </Link>
+          </p>
+        </Container>
+      </section>
+    )
+  }
   const nextMentor = getMentor(next.mentorSlug)!
 
   return (

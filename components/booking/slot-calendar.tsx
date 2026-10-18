@@ -6,7 +6,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 import { addDays, weekdayOf } from "@/lib/timezone"
 import { cn } from "@/lib/utils"
 
-export type DayState = { disabled: boolean; hint: string }
+export type DayState = { disabled: boolean; hint: string; full?: boolean }
 
 type SlotCalendarProps = {
   selected: string | null
@@ -14,6 +14,7 @@ type SlotCalendarProps = {
   min: string
   max: string
   initialFocus: string
+  today?: string
   getDay: (dateKey: string) => DayState
   onSelect: (dateKey: string) => void
 }
@@ -31,7 +32,7 @@ function shiftMonth(dateKey: string, delta: number) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + delta, date.getUTCDate())).toISOString().slice(0, 10)
 }
 
-export function SlotCalendar({ selected, min, max, initialFocus, getDay, onSelect }: SlotCalendarProps) {
+export function SlotCalendar({ selected, min, max, initialFocus, today = min, getDay, onSelect }: SlotCalendarProps) {
   const [focusKey, setFocusKey] = useState(selected ?? initialFocus)
   const [visible, setVisible] = useState(monthStart(selected ?? initialFocus))
   const grid = useRef<HTMLTableElement>(null)
@@ -43,9 +44,10 @@ export function SlotCalendar({ selected, min, max, initialFocus, getDay, onSelec
     grid.current?.querySelector<HTMLElement>(`[data-date="${focusKey}"]`)?.focus()
   })
 
-  const goTo = (dateKey: string) => {
+  // Only keyboard moves inside the grid take focus along; month buttons keep focus where it is.
+  const goTo = (dateKey: string, focus: boolean) => {
     const next = clamp(dateKey, min, max)
-    moveFocus.current = true
+    moveFocus.current = focus
     setFocusKey(next)
     setVisible(monthStart(next))
   }
@@ -64,7 +66,7 @@ export function SlotCalendar({ selected, min, max, initialFocus, getDay, onSelec
     const target = moves[event.key]
     if (!target) return
     event.preventDefault()
-    goTo(target)
+    goTo(target, true)
   }
 
   const offset = weekdayOf(visible)
@@ -83,7 +85,7 @@ export function SlotCalendar({ selected, min, max, initialFocus, getDay, onSelec
           type="button"
           aria-label="Previous month"
           disabled={!canGoBack}
-          onClick={() => goTo(clamp(shiftMonth(visible, -1), min, max))}
+          onClick={() => goTo(shiftMonth(visible, -1), false)}
           className="flex size-10 items-center justify-center rounded-lg hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent focus-ring"
         >
           <ChevronLeftIcon className="size-4" aria-hidden="true" />
@@ -95,7 +97,7 @@ export function SlotCalendar({ selected, min, max, initialFocus, getDay, onSelec
           type="button"
           aria-label="Next month"
           disabled={!canGoForward}
-          onClick={() => goTo(clamp(shiftMonth(visible, 1), min, max))}
+          onClick={() => goTo(shiftMonth(visible, 1), false)}
           className="flex size-10 items-center justify-center rounded-lg hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent focus-ring"
         >
           <ChevronRightIcon className="size-4" aria-hidden="true" />
@@ -120,6 +122,9 @@ export function SlotCalendar({ selected, min, max, initialFocus, getDay, onSelec
                 const outside = dateKey < min || dateKey > max
                 const day = outside ? { disabled: true, hint: "outside the booking window" } : getDay(dateKey)
                 const isSelected = dateKey === selected
+                const isToday = dateKey === today
+                const full = !day.disabled && day.full
+                const label = [dayFormat.format(utc(dateKey)), isToday && "today", day.hint].filter(Boolean).join(", ")
                 return (
                   <td key={dateKey} role="gridcell" aria-selected={isSelected} className="p-0 text-center">
                     <button
@@ -127,17 +132,21 @@ export function SlotCalendar({ selected, min, max, initialFocus, getDay, onSelec
                       data-date={dateKey}
                       tabIndex={dateKey === focusKey ? 0 : -1}
                       aria-disabled={day.disabled || undefined}
-                      aria-label={`${dayFormat.format(utc(dateKey))}, ${day.hint}`}
+                      aria-label={label}
+                      aria-current={isToday ? "date" : undefined}
                       onFocus={() => setFocusKey(dateKey)}
                       onClick={() => !day.disabled && onSelect(dateKey)}
                       className={cn(
-                        "mx-auto flex size-10 items-center justify-center rounded-full text-sm transition focus-ring sm:size-11",
+                        "relative mx-auto flex size-10 items-center justify-center rounded-full text-sm transition focus-ring sm:size-11",
                         isSelected && "bg-primary font-semibold text-primary-foreground",
-                        !isSelected && !day.disabled && "bg-accent/60 font-medium hover:bg-accent",
-                        !isSelected && day.disabled && "cursor-not-allowed text-muted-foreground/60"
+                        !isSelected && !day.disabled && !full && "bg-accent/60 font-medium hover:bg-accent",
+                        !isSelected && full && "bg-muted text-muted-foreground line-through hover:bg-muted/70",
+                        !isSelected && day.disabled && "cursor-not-allowed text-muted-foreground/60",
+                        isToday && !isSelected && "ring-2 ring-primary/60 ring-inset"
                       )}
                     >
                       {Number(dateKey.slice(8))}
+                      {isToday && <span className="absolute bottom-1 size-1 rounded-full bg-current" aria-hidden="true" />}
                     </button>
                   </td>
                 )
@@ -147,10 +156,20 @@ export function SlotCalendar({ selected, min, max, initialFocus, getDay, onSelec
         </tbody>
       </table>
 
-      <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="size-3 rounded-full bg-accent" aria-hidden="true" />
-        Days with open times
-      </p>
+      <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground" aria-label="Calendar legend">
+        <li className="flex items-center gap-2">
+          <span className="size-3 rounded-full bg-accent" aria-hidden="true" />
+          Open times
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="size-3 rounded-full bg-muted ring-1 ring-border" aria-hidden="true" />
+          Fully booked
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="size-3 rounded-full ring-2 ring-primary/60 ring-inset" aria-hidden="true" />
+          Today
+        </li>
+      </ul>
     </div>
   )
 }

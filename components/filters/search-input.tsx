@@ -34,9 +34,9 @@ export function SearchInput({ value, onChange, label, placeholder, className }: 
           type="button"
           onClick={() => onChange("")}
           aria-label="Clear search"
-          className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-ring"
         >
-          <XIcon className="size-4" />
+          <XIcon className="size-4" aria-hidden="true" />
         </button>
       )}
     </div>

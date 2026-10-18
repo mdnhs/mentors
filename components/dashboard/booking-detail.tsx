@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useState } from "react"
 import { CalendarClockIcon, CalendarOffIcon, Loader2Icon } from "lucide-react"
+import { toast } from "sonner"
 
 import { BookingActions } from "@/components/dashboard/booking-actions"
 import { NotesPanel } from "@/components/dashboard/notes-panel"
@@ -27,6 +28,7 @@ export function BookingDetail({ id }: { id: string }) {
   const { bookings, orders } = useAppState()
   const now = useNow()
   const [paying, setPaying] = useState(false)
+  const [payError, setPayError] = useState<string | null>(null)
 
   if (!now) return <Skeleton className="mt-6 h-64 rounded-2xl" />
 
@@ -52,8 +54,16 @@ export function BookingDetail({ id }: { id: string }) {
   const pay = async () => {
     if (!order || paying) return
     setPaying(true)
-    await payForOrder(order.id, order.method, "success")
-    setPaying(false)
+    setPayError(null)
+    try {
+      const outcome = await payForOrder(order.id, order.method, "success")
+      if (outcome.ok) toast.success("Payment received — your session is confirmed")
+      else setPayError(outcome.message)
+    } catch {
+      setPayError("We couldn't take the payment. Please try again.")
+    } finally {
+      setPaying(false)
+    }
   }
 
   return (
@@ -78,16 +88,57 @@ export function BookingDetail({ id }: { id: string }) {
         </header>
 
         {unpaid && (
-          <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warning-soft p-4 text-sm text-warning">
-            <p>
-              <span className="font-medium">{orderStatusLabels[order.status]}.</span> Your time is held until {formatTime(order.expiresAt)}. Demo payment: no money is taken.
+          <div className="rounded-xl bg-warning-soft p-4 text-sm text-warning">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p>
+                <span className="font-medium">{orderStatusLabels[order.status]}.</span> Your time is held until {formatTime(order.expiresAt)}. Demo payment: no money is taken.
+              </p>
+              <Button size="sm" onClick={pay} disabled={paying}>
+                {paying && <Loader2Icon className="animate-spin" aria-hidden="true" />}
+                {paying ? "Processing…" : `Pay ${formatPrice(order.quote.total, order.quote.currency)}`}
+              </Button>
+            </div>
+            <p role="alert" className="mt-2 font-medium text-destructive empty:hidden">
+              {payError}
             </p>
-            <Button size="sm" onClick={pay} disabled={paying}>
-              {paying && <Loader2Icon className="animate-spin" aria-hidden="true" />}
-              {paying ? "Processing…" : `Pay ${formatPrice(order.quote.total, order.quote.currency)}`}
-            </Button>
           </div>
         )}
+      </div>
+
+      <aside className="space-y-6 lg:sticky lg:top-24 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:self-start">
+        <section aria-labelledby="payment" className="surface p-4 sm:p-5">
+          <h2 id="payment" className="text-subheading">
+            Payment
+          </h2>
+          {order ? (
+            <dl className="mt-3 space-y-2 text-sm">
+              <Row label="Price">{formatPrice(order.quote.base, order.quote.currency)}</Row>
+              <Row label="Platform fee">{formatPrice(order.quote.platformFee, order.quote.currency)}</Row>
+              <Row label="Total" strong>
+                {formatPrice(order.quote.total, order.quote.currency)}
+              </Row>
+              <Row label="Status">{orderStatusLabels[order.status]}</Row>
+              {order.refundAmount !== undefined && <Row label="Refund">{formatPrice(order.refundAmount, order.quote.currency)}</Row>}
+              <Row label="Order ID">{order.id}</Row>
+            </dl>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">Total {formatPrice(booking.total)}. {booking.sample ? "Sample record with no payment attached." : ""}</p>
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">Demo mode: payments are simulated and no money moves.</p>
+        </section>
+
+        <section aria-labelledby="policy" className="surface p-4 sm:p-5">
+          <h2 id="policy" className="text-subheading">
+            Cancel or reschedule
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">{cancellationTerms[policyFor(booking)]}</p>
+          <div className="mt-3">
+            <BookingActions booking={booking} order={order} now={now} />
+          </div>
+        </section>
+      </aside>
+
+      <div className="space-y-8 lg:col-span-2">
 
         <section aria-labelledby="when" className="surface p-4 sm:p-5">
           <h2 id="when" className="text-subheading">
@@ -129,39 +180,6 @@ export function BookingDetail({ id }: { id: string }) {
           </div>
         </section>
       </div>
-
-      <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-        <section aria-labelledby="payment" className="surface p-4 sm:p-5">
-          <h2 id="payment" className="text-subheading">
-            Payment
-          </h2>
-          {order ? (
-            <dl className="mt-3 space-y-2 text-sm">
-              <Row label="Price">{formatPrice(order.quote.base, order.quote.currency)}</Row>
-              <Row label="Platform fee">{formatPrice(order.quote.platformFee, order.quote.currency)}</Row>
-              <Row label="Total" strong>
-                {formatPrice(order.quote.total, order.quote.currency)}
-              </Row>
-              <Row label="Status">{orderStatusLabels[order.status]}</Row>
-              {order.refundAmount !== undefined && <Row label="Refund">{formatPrice(order.refundAmount, order.quote.currency)}</Row>}
-              <Row label="Order ID">{order.id}</Row>
-            </dl>
-          ) : (
-            <p className="mt-3 text-sm text-muted-foreground">Total {formatPrice(booking.total)}. {booking.sample ? "Sample record with no payment attached." : ""}</p>
-          )}
-          <p className="mt-3 text-xs text-muted-foreground">Demo mode: payments are simulated and no money moves.</p>
-        </section>
-
-        <section aria-labelledby="policy" className="surface p-4 sm:p-5">
-          <h2 id="policy" className="text-subheading">
-            Cancel or reschedule
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">{cancellationTerms[policyFor(booking)]}</p>
-          <div className="mt-3">
-            <BookingActions booking={booking} order={order} now={now} />
-          </div>
-        </section>
-      </aside>
     </div>
   )
 }

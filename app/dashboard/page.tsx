@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 
 import { RequireSignIn } from "@/components/auth/require-sign-in"
 import { DashboardGreeting, LearnerDashboard } from "@/components/dashboard/learner-dashboard"
+import { WorkspaceLink } from "@/components/dashboard/workspace-link"
 import { Container } from "@/components/site/container"
 
 export const metadata: Metadata = {
@@ -18,12 +18,7 @@ export default function DashboardPage() {
       <RequireSignIn>
         <DashboardGreeting />
         <LearnerDashboard />
-        <p className="mt-12 text-sm text-muted-foreground">
-          Are you a mentor?{" "}
-          <Link href="/dashboard/mentor" className="link">
-            Open the mentor dashboard
-          </Link>
-        </p>
+        <WorkspaceLink />
       </RequireSignIn>
     </Container>
   )

@@ -2,11 +2,12 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { CalendarOffIcon, CheckIcon } from "lucide-react"
+import { CalendarOffIcon, CheckIcon, StarIcon } from "lucide-react"
 
 import { offerFacts, offerIcons, offerMeta, priceUnits } from "@/components/mentors/offer-meta"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { offerTypeLabels } from "@/lib/categories"
+import { getRating, getReviews } from "@/lib/data"
 import { formatPrice } from "@/lib/format"
 import { cancellationTerms, getOfferAvailability, getPublishedOffers, offerActionLabels, offerHref } from "@/lib/offers"
 import { useManagedMentor } from "@/lib/store"
@@ -81,7 +82,7 @@ export function OfferPanel({ mentor: catalogMentor }: { mentor: Mentor }) {
         })}
       </div>
 
-      <div className="mt-5 border-t pt-4" aria-live="polite">
+      <div className="mt-5 border-t pt-4">
         <p className="text-sm">{offer.description}</p>
         <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground" aria-label="Details">
           {offerFacts(mentor, offer).map(({ icon: Icon, text }) => (
@@ -101,6 +102,8 @@ export function OfferPanel({ mentor: catalogMentor }: { mentor: Mentor }) {
         </ul>
       </div>
 
+      <RatingSummary slug={mentor.slug} />
+
       {availability.bookable ? (
         <Link href={offerHref(mentor, offer)} className={cn(buttonVariants({ size: "lg" }), "mt-5 w-full")}>
           {offerActionLabels[offer.type]} · {formatPrice(offer.price)}
@@ -116,5 +119,30 @@ export function OfferPanel({ mentor: catalogMentor }: { mentor: Mentor }) {
       )}
       <p className="mt-3 text-xs text-muted-foreground">{cancellationTerms[offer.cancellation]}</p>
     </section>
+  )
+}
+
+const QUOTE_LENGTH = 110
+
+function RatingSummary({ slug }: { slug: string }) {
+  const rating = getRating(slug)
+  if (!rating) return null
+  const [top] = [...getReviews(slug)].sort((a, b) => b.rating - a.rating)
+  const quote = top.text.length > QUOTE_LENGTH ? `${top.text.slice(0, top.text.lastIndexOf(" ", QUOTE_LENGTH))}…` : top.text
+
+  return (
+    <div className="mt-5 rounded-xl bg-muted/60 p-3 text-sm">
+      <a href="#reviews" className="inline-flex items-center gap-1.5 rounded-sm focus-ring hover:underline">
+        <StarIcon className="size-4 fill-rating text-rating" aria-hidden="true" />
+        <span className="font-semibold">{rating.average.toFixed(1)}</span>
+        <span className="text-muted-foreground">
+          · {rating.count} {rating.count === 1 ? "review" : "reviews"}
+        </span>
+      </a>
+      <figure className="mt-1.5">
+        <blockquote className="text-muted-foreground">&ldquo;{quote}&rdquo;</blockquote>
+        <figcaption className="mt-1 text-xs text-muted-foreground">{top.author}</figcaption>
+      </figure>
+    </div>
   )
 }

@@ -8,6 +8,8 @@ import { getListedMentors } from "@/lib/offers"
 
 export const metadata: Metadata = {
   title: "Become a mentor",
+  description: "Share what you know: offer 1:1 calls, group sessions and reviews on your own schedule and price.",
+  alternates: { canonical: "/become-a-mentor" },
 }
 
 const benefits = [

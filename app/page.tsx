@@ -1,3 +1,5 @@
+import type { Metadata } from "next"
+
 import { Hero } from "@/components/home/hero"
 import { MentorCta } from "@/components/home/mentor-cta"
 import { TrackPanels } from "@/components/home/track-panels"
@@ -5,12 +7,16 @@ import { UpcomingSessions } from "@/components/home/upcoming-sessions"
 import { MentorCard } from "@/components/mentors/mentor-card"
 import { Container } from "@/components/site/container"
 import { SectionHeading } from "@/components/site/section-heading"
-import { getMentor } from "@/lib/data"
+import { pickListedMentors } from "@/lib/mentor-filters"
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+}
 
 const featuredSlugs = ["tanvir-rahman", "arif-hossain", "sadia-islam", "farhan-kabir"]
 
 export default function HomePage() {
-  const featured = featuredSlugs.map((slug) => getMentor(slug)!)
+  const featured = pickListedMentors(featuredSlugs, 4)
 
   return (
     <>

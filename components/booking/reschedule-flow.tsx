@@ -2,15 +2,18 @@
 
 import Link from "next/link"
 import { useRef, useState } from "react"
-import { CalendarOffIcon, CheckIcon, CircleAlertIcon, Loader2Icon } from "lucide-react"
+import { CalendarOffIcon } from "lucide-react"
 
 import { SchedulePicker } from "@/components/booking/schedule-picker"
+import { StepActions } from "@/components/booking/steps/step-actions"
+import { SuccessHero } from "@/components/booking/success-hero"
+import { CheckoutError } from "@/components/checkout/checkout-parts"
 import { EmptyState } from "@/components/site/empty-state"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { rescheduleDecision } from "@/lib/booking-policy"
 import { rescheduleBooking } from "@/lib/booking-service"
-import { formatDate, formatTime } from "@/lib/format"
+import { formatDate, formatTime, timezoneLabel } from "@/lib/format"
 import { transact, useAppState, useIsClient } from "@/lib/store"
 import type { Booking, Mentor } from "@/lib/types"
 
@@ -39,14 +42,11 @@ export function RescheduleFlow({ mentor, bookingId }: { mentor: Mentor; bookingI
 
   if (moved) {
     return (
-      <div role="status" className="mx-auto max-w-lg py-6 text-center sm:py-12">
-        <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-soft text-success ring-8 ring-success-soft/50">
-          <CheckIcon className="size-7" aria-hidden="true" />
-        </span>
-        <h1 className="mt-6 text-heading">Session rescheduled</h1>
-        <p className="mt-2 text-muted-foreground">
-          {moved.title} is now on {formatDate(moved.date, moved.timezone)} at {formatTime(moved.date, moved.timezone)}.
-        </p>
+      <div className="mx-auto max-w-lg py-6 text-center sm:py-12">
+        <SuccessHero
+          title="Session rescheduled"
+          description={`${moved.title} is now on ${formatDate(moved.date, moved.timezone)} at ${formatTime(moved.date, moved.timezone)} ${timezoneLabel(moved.timezone, moved.date)}.`}
+        />
         <Link href="/dashboard" className={buttonVariants({ size: "lg", className: "mt-8" })}>
           Go to my sessions
         </Link>
@@ -91,7 +91,7 @@ export function RescheduleFlow({ mentor, bookingId }: { mentor: Mentor; bookingI
   }
 
   return (
-    <div className="mt-4 max-w-2xl pb-24 sm:pb-0">
+    <div className="mt-4 max-w-2xl">
       <h1 className="text-title">Reschedule {booking.title}</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Currently {formatDate(booking.date, learnerTimezone)}, {formatTime(booking.date, learnerTimezone)}. You can move a session once.
@@ -112,23 +112,23 @@ export function RescheduleFlow({ mentor, bookingId }: { mentor: Mentor; bookingI
             setError(null)
           }}
         />
-        {error && (
-          <p role="alert" className="mt-4 flex items-start gap-2 rounded-xl bg-warning-soft p-3 text-sm text-warning">
-            <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            {error}
-          </p>
-        )}
+        {error && <CheckoutError title="We couldn't move your session." message={error} className="mt-4" />}
       </div>
 
-      <div data-mobile-bar className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t bg-card/95 px-4 py-3 backdrop-blur sm:static sm:mt-4 sm:justify-between sm:border-0 sm:bg-transparent sm:p-0">
-        <Link href="/dashboard" className={buttonVariants({ variant: "ghost", size: "lg" })}>
-          Keep current time
-        </Link>
-        <Button onClick={confirm} disabled={!slot || submitting} size="lg" className="flex-1 sm:min-w-40 sm:flex-none">
-          {submitting && <Loader2Icon className="animate-spin" aria-hidden="true" />}
-          {submitting ? "Moving…" : "Confirm new time"}
-        </Button>
-      </div>
+      {(["desktop", "mobile"] as const).map((variant) => (
+        <StepActions
+          key={variant}
+          variant={variant}
+          backLabel="Keep current time"
+          backHref="/dashboard"
+          nextLabel="Confirm new time"
+          busyLabel="Moving…"
+          onNext={confirm}
+          disabled={!slot}
+          busy={submitting}
+          blockedReason="Pick a new date and time to continue."
+        />
+      ))}
     </div>
   )
 }

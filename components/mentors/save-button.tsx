@@ -1,6 +1,7 @@
 "use client"
 
 import { HeartIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { toggleSaved, useAppState } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -16,21 +17,26 @@ export function SaveButton({ slug, name, variant = "overlay", className }: SaveB
   const { saved } = useAppState()
   const isSaved = saved.includes(slug)
 
+  const toggle = () => {
+    toggleSaved(slug)
+    toast.success(isSaved ? `Removed ${name} from saved` : `Saved ${name}`)
+  }
+
   return (
     <button
       type="button"
       aria-pressed={isSaved}
-      aria-label={isSaved ? `Remove ${name} from saved` : `Save ${name}`}
-      onClick={() => toggleSaved(slug)}
+      aria-label={`Save ${name}`}
+      onClick={toggle}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-full transition focus-ring active:scale-95",
-        variant === "overlay" && "size-9 bg-white/90 text-foreground shadow-sm backdrop-blur hover:bg-white",
+        variant === "overlay" && "size-9 bg-background/90 text-foreground shadow-sm backdrop-blur hover:bg-background",
         variant === "outline" && "h-10 border bg-card px-4 text-sm font-medium hover:bg-muted",
         className
       )}
     >
-      <HeartIcon className={cn("size-4 transition-colors", isSaved && "fill-saved text-saved")} />
-      {variant === "outline" && <span>{isSaved ? "Saved" : "Save"}</span>}
+      <HeartIcon className={cn("size-4 transition-colors", isSaved && "fill-saved text-saved")} aria-hidden="true" />
+      {variant === "outline" && <span aria-hidden="true">{isSaved ? "Saved" : "Save"}</span>}
     </button>
   )
 }

@@ -5,6 +5,7 @@ import { ArrowRightIcon, CheckCircle2Icon, InfoIcon, StarIcon } from "lucide-rea
 
 import { CancelSession } from "@/components/dashboard/cancel-session"
 import { MentorBookingCard } from "@/components/mentor/mentor-booking-card"
+import { MentorPageHeader } from "@/components/mentor/mentor-shell"
 import { useMentorWorkspace } from "@/components/mentor/use-mentor-workspace"
 import { SessionBadge } from "@/components/sessions/session-badge"
 import { DateBlock } from "@/components/sessions/date-block"
@@ -19,7 +20,14 @@ import { cn } from "@/lib/utils"
 
 export function MentorOverview() {
   const { state, now, actor, mentor, bookings, summary } = useMentorWorkspace()
-  if (!now || !summary) return <Skeleton className="mt-6 h-48 rounded-3xl" />
+  const header = <MentorPageHeader title="Overview" description="What needs your attention, your bookings and your earnings at a glance." />
+  if (!now || !summary)
+    return (
+      <div className="mt-6 space-y-6">
+        {header}
+        <Skeleton className="h-48 rounded-3xl" />
+      </div>
+    )
 
   const { upcoming, completed, closed } = splitMentorBookings(bookings, now)
   const tasks = mentorTasks({ bookings, offers: mentor.offers, availability: mentor.availability, summary }, now)
@@ -38,6 +46,7 @@ export function MentorOverview() {
 
   return (
     <div className="mt-6 space-y-10">
+      {header}
       {hasSamples && (
         <div role="note" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-warning-soft p-3 text-sm text-warning ring-1 ring-warning/20">
           <InfoIcon className="size-4 shrink-0" aria-hidden="true" />
@@ -51,14 +60,14 @@ export function MentorOverview() {
       )}
 
       <section aria-labelledby="up-next" className="rounded-3xl bg-foreground p-5 text-background sm:p-7">
-        <p id="up-next" className="text-sm font-medium text-white/60">
+        <p id="up-next" className="text-sm font-medium text-background/60">
           Up next
         </p>
         {top ? (
           <>
             <h2 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">{top.title}</h2>
-            <p className="mt-1 max-w-2xl text-white/70">{top.detail}</p>
-            <Link href={top.href} className={cn(buttonVariants({ size: "lg" }), "mt-5 bg-white text-foreground hover:bg-white/90")}>
+            <p className="mt-1 max-w-2xl text-background/70">{top.detail}</p>
+            <Link href={top.href} className={cn(buttonVariants({ size: "lg" }), "mt-5 bg-background text-foreground hover:bg-background/90 focus-visible:ring-background/60")}>
               {top.cta}
               <ArrowRightIcon aria-hidden="true" />
             </Link>
@@ -69,14 +78,14 @@ export function MentorOverview() {
               <CheckCircle2Icon className="size-6" aria-hidden="true" />
               You&apos;re all set
             </h2>
-            <p className="mt-1 text-white/70">Nothing needs your attention right now.</p>
+            <p className="mt-1 text-background/70">Nothing needs your attention right now.</p>
           </>
         )}
         {rest.length > 0 && (
-          <ul className="mt-6 divide-y divide-white/10 border-t border-white/10 text-sm">
+          <ul className="mt-6 divide-y divide-background/10 border-t border-background/10 text-sm">
             {rest.slice(0, 3).map((task) => (
               <li key={task.id}>
-                <Link href={task.href} className="flex items-center justify-between gap-3 py-3 text-white/80 hover:text-white">
+                <Link href={task.href} className="flex items-center justify-between gap-3 rounded-md py-3 text-background/80 outline-none hover:text-background focus-visible:ring-3 focus-visible:ring-background/60">
                   <span className="min-w-0 truncate">{task.title}</span>
                   <ArrowRightIcon className="size-4 shrink-0" aria-hidden="true" />
                 </Link>

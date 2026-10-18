@@ -53,10 +53,17 @@ export function formatMonthYear(iso: string) {
   return `${p.month} ${p.year}`
 }
 
+export function timezoneCity(timeZone: string) {
+  return timeZone.split("/").pop()?.replace(/_/g, " ") ?? timeZone
+}
+
+// Offset name such as "GMT+6", which reflects daylight saving at that instant.
+export function timezoneOffset(timeZone: string, at: string | Date) {
+  return parts(new Date(at), timeZone, { timeZoneName: "shortOffset" }).timeZoneName ?? "UTC"
+}
+
 export function timezoneLabel(timeZone: string, at: string | Date) {
-  const city = timeZone.split("/").pop()?.replace(/_/g, " ") ?? timeZone
-  const p = parts(new Date(at), timeZone, { timeZoneName: "shortOffset" })
-  return `${city} (${p.timeZoneName})`
+  return `${timezoneCity(timeZone)} (${timezoneOffset(timeZone, at)})`
 }
 
 export function initials(name: string) {

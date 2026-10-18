@@ -4,6 +4,7 @@ import Link from "next/link"
 import { ArrowRightIcon, BellIcon, CalendarClockIcon, CalendarPlusIcon, CheckCircle2Icon, CompassIcon, FileTextIcon, HeartIcon, InfoIcon, SettingsIcon } from "lucide-react"
 
 import { BookingRow, SamplePill } from "@/components/dashboard/booking-row"
+import { clearSampleDataWithUndo } from "@/components/dashboard/clear-sample-data"
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { MentorPhoto } from "@/components/mentors/mentor-photo"
 import { SaveButton } from "@/components/mentors/save-button"
@@ -25,7 +26,7 @@ import {
 } from "@/lib/dashboard"
 import { getMentor } from "@/lib/data"
 import { formatCountdown, formatDate, formatDuration, formatPrice, formatTime } from "@/lib/format"
-import { clearSampleData, useAppState, useNow } from "@/lib/store"
+import { useAppState, useNow } from "@/lib/store"
 import { meetingAccess } from "@/lib/sessions"
 import { getSession } from "@/lib/data"
 import type { Booking } from "@/lib/types"
@@ -144,7 +145,7 @@ function DemoBanner({ hasSamples }: { hasSamples: boolean }) {
         {hasSamples ? "Login is simulated and data stays in this browser. Items marked Sample are made-up examples, not your bookings." : "Login is simulated and data stays in this browser."}
       </p>
       {hasSamples && (
-        <Button variant="outline" size="sm" onClick={clearSampleData}>
+        <Button variant="outline" size="sm" onClick={clearSampleDataWithUndo}>
           Clear sample data
         </Button>
       )}
@@ -159,17 +160,17 @@ function NextSession({ booking, now }: { booking: Booking; now: Date }) {
 
   return (
     <section aria-labelledby="next-session" className="flex h-full flex-col gap-5 rounded-3xl bg-foreground p-5 text-background sm:flex-row sm:items-center sm:p-6">
-      <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-2xl bg-white/10 sm:w-28">
+      <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-2xl bg-background/10 sm:w-28">
         <MentorPhoto src={mentor.photo} name={mentor.name} sizes="112px" priority />
       </div>
       <div className="min-w-0 flex-1">
-        <p id="next-session" className="flex items-center gap-2 text-sm font-medium text-white/60">
+        <p id="next-session" className="flex items-center gap-2 text-sm font-medium text-background/60">
           Next session · {formatCountdown(new Date(booking.date).getTime() - now.getTime())}
-          {booking.sample && <SamplePill className="border-white/30 text-white/70" />}
+          {booking.sample && <SamplePill className="border-background/30 text-background/70" />}
         </p>
         <h2 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">{booking.title}</h2>
-        <p className="mt-1 text-white/70">with {mentor.name}</p>
-        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/80">
+        <p className="mt-1 text-background/70">with {mentor.name}</p>
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-background/80">
           <span className="flex items-center gap-1.5">
             <CalendarClockIcon className="size-4" aria-hidden="true" />
             {formatDate(booking.date, booking.timezone)}, {formatTime(booking.date, booking.timezone)}
@@ -179,14 +180,14 @@ function NextSession({ booking, now }: { booking: Booking; now: Date }) {
       </div>
       <div className="flex flex-col gap-2 sm:items-end">
         {access?.access === "granted" && (
-          <a href={access.details.url} target="_blank" rel="noreferrer" className={cn(buttonVariants({ size: "lg" }), "bg-white text-foreground hover:bg-white/90")}>
+          <a href={access.details.url} target="_blank" rel="noreferrer" className={cn(buttonVariants({ size: "lg" }), "bg-background text-foreground hover:bg-background/90")}>
             Join session
           </a>
         )}
-        <Link href={bookingHref(booking)} className={cn(buttonVariants({ size: "lg", variant: access?.access === "granted" ? "ghost" : "default" }), access?.access === "granted" ? "text-white hover:bg-white/10" : "bg-white text-foreground hover:bg-white/90")}>
+        <Link href={bookingHref(booking)} className={cn(buttonVariants({ size: "lg", variant: access?.access === "granted" ? "ghost" : "default" }), access?.access === "granted" ? "text-background hover:bg-background/10" : "bg-background text-foreground hover:bg-background/90")}>
           View details
         </Link>
-        <p className="text-xs text-white/60">
+        <p className="text-xs text-background/60">
           {access?.access === "locked" ? "Session link opens 30 minutes before" : "Reschedule or cancel from details"}
         </p>
       </div>
