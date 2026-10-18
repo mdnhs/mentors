@@ -48,7 +48,7 @@ test.describe("access control", () => {
     await actAs(page, "admin", ADMIN, "/dashboard/admin")
     for (const [path, heading] of [
       ["/dashboard/admin", "Overview"],
-      ["/dashboard/admin/applications", "Application review"],
+      ["/dashboard/admin/applications", "Mentor applications"],
       ["/dashboard/admin/moderation", "Mentors & offers"],
       ["/dashboard/admin/bookings", "Booking management"],
       ["/dashboard/admin/refunds", "Refunds & disputes"],
@@ -65,15 +65,40 @@ test.describe("access control", () => {
 })
 
 test.describe("overview", () => {
-  test("shows computed metrics clearly labelled as demo data", async ({ page }) => {
+  test("leads with the work that needs action, then computed metrics", async ({ page }) => {
     await actAs(page, "admin", ADMIN, "/dashboard/admin")
-    await expect(page.getByRole("note")).toContainText("Demo administration")
-    await expect(page.getByText("Gross booking value", { exact: true })).toBeVisible()
-    await expect(page.getByText("Completed bookings", { exact: true })).toBeVisible()
-    await expect(page.getByText("Repeat booking rate", { exact: true })).toBeVisible()
-    await expect(page.getByText("Booking conversion", { exact: true })).toBeVisible()
-    // The counts line names the sample split rather than implying real activity.
-    await expect(page.getByText(/of \d+ bookings and \d+ of \d+ orders are marked Sample/)).toBeVisible()
+    const needs = page.getByRole("region", { name: "Needs action" })
+    await expect(needs.getByRole("link", { name: /Applications to review/ })).toBeVisible()
+    await expect(needs.getByRole("link", { name: /Open disputes/ })).toBeVisible()
+    // Zero queues collapse into a single quiet line rather than a row each.
+    await expect(needs.getByText("All clear:")).toBeVisible()
+    // The big demo banner is gone; the shell's "Demo data" chip covers it.
+    await expect(page.getByRole("note")).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Demo data" })).toBeVisible()
+    const revenue = page.getByRole("region", { name: "Revenue" })
+    await expect(revenue.getByText("Net revenue", { exact: true })).toBeVisible()
+    await expect(revenue.getByText("Gross booking value", { exact: true })).toBeVisible()
+    const health = page.getByRole("region", { name: "Marketplace health" })
+    await expect(health.getByText("Completed bookings", { exact: true })).toBeVisible()
+    await expect(health.getByText("Repeat booking rate", { exact: true })).toBeVisible()
+    await expect(health.getByText("Booking conversion", { exact: true })).toBeVisible()
+    await expect(health.getByText("Active mentors", { exact: true })).toBeVisible()
+  })
+
+  test("recent activity shows the latest audit entries", async ({ page }) => {
+    await actAs(page, "admin", ADMIN, "/dashboard/admin")
+    await expect(page.getByRole("region", { name: "Recent activity" })).toContainText("No admin actions yet")
+    await page.goto("/dashboard/admin/reviews")
+    await page.getByLabel("Search reviews").fill("Mahin K.")
+    await row(page, "Mahin K.").getByRole("button", { name: "Hide" }).click()
+    await page.getByLabel("Reason").fill("Names a person outside the session")
+    await dialog(page).getByRole("button", { name: "Hide review" }).click()
+    await expect(feedback(page, "Review hidden.")).toBeVisible()
+    await page.goto("/dashboard/admin")
+    const activity = page.getByRole("region", { name: "Recent activity" })
+    await expect(activity).toContainText("Review hidden")
+    await activity.getByRole("link", { name: "Audit log" }).click()
+    await expect(page).toHaveURL(/\/dashboard\/admin\/audit$/)
   })
 
   test("work queues link into the matching modules", async ({ page }) => {
@@ -130,6 +155,25 @@ test.describe("moderation and audit", () => {
     await expect(row(page, "DSP-1041")).toContainText("Refunded")
   })
 
+  test("refunds lead with a summary of the open work", async ({ page }) => {
+    await actAs(page, "admin", ADMIN, "/dashboard/admin/refunds")
+    const summary = page.locator('dl[aria-label="Refund summary"]')
+    await expect(summary).toContainText("Open disputes")
+    await expect(summary).toContainText("Refunds pending")
+    await expect(summary).toContainText("Refunded this month")
+    await expect(page.getByRole("region", { name: "Refunds" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Disputes" })).toBeVisible()
+  })
+
+  test("record IDs copy to the clipboard", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "Clipboard permissions are Chromium-only")
+    await context.grantPermissions(["clipboard-read", "clipboard-write"])
+    await actAs(page, "admin", ADMIN, "/dashboard/admin/refunds")
+    await row(page, "DSP-1041").getByRole("button", { name: "Copy ID DSP-1041" }).click()
+    await expect(feedback(page, "Copied")).toBeVisible()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("DSP-1041")
+  })
+
   test("restricting an account needs a reason and updates the row", async ({ page }) => {
     await actAs(page, "admin", ADMIN, "/dashboard/admin/users")
     await page.getByLabel("Search accounts").fill("nadia.sample")
@@ -145,6 +189,7 @@ test.describe("records", () => {
   test("transaction log is read-only and marked simulated", async ({ page }) => {
     await actAs(page, "admin", ADMIN, "/dashboard/admin/transactions")
     await expect(page.getByRole("main")).toContainText("ORD-IB-1")
+    await expect(page.getByRole("note")).toHaveCount(0)
     await expect(page.getByRole("main")).toContainText("simulated")
     await expect(page.getByRole("button", { name: /Mark paid|Cancel/ })).toHaveCount(0)
   })
@@ -171,8 +216,9 @@ test.describe("records", () => {
 
   test("a mentor payout can be requested and then settled by an admin", async ({ page }) => {
     await actAs(page, "mentor", "mentor@example.com", "/dashboard/mentor/earnings")
-    await page.getByRole("button", { name: "Request demo payout" }).click()
-    await expect(page.getByRole("status")).toContainText("requested")
+    await page.getByRole("button", { name: "Request payout" }).click()
+    await dialog(page).getByRole("button", { name: "Request payout" }).click()
+    await expect(feedback(page, "requested")).toBeVisible()
 
     await actAs(page, "admin", ADMIN, "/dashboard/admin/payouts")
     await expect(page.getByRole("main")).toContainText("Pending")
@@ -198,16 +244,23 @@ test.describe("money actions", () => {
 })
 
 test.describe("layout", () => {
-  test("each admin page has exactly one h1 and a module switcher on small screens", async ({ page, isMobile }) => {
+  test("each admin page has exactly one h1 and the shell navigates between modules", async ({ page, isMobile }) => {
     await actAs(page, "admin", ADMIN, "/dashboard/admin/payouts")
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1)
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Mentor payouts")
     if (isMobile) {
-      await page.getByRole("button", { name: /Admin module: Payouts/ }).click()
+      await expect(page.getByRole("navigation", { name: "Admin tabs" }).getByRole("link", { name: "Bookings" })).toBeVisible()
+      await page.getByRole("button", { name: "Open menu" }).click()
+      await expect(page.getByRole("dialog").getByRole("link", { name: "Payouts" })).toHaveAttribute("aria-current", "page")
       await page.getByRole("dialog").getByRole("link", { name: "Audit log" }).click()
       await expect(page).toHaveURL(/\/dashboard\/admin\/audit$/)
     } else {
-      await expect(page.getByRole("navigation", { name: "Admin modules" }).getByRole("link", { name: "Payouts" })).toHaveAttribute("aria-current", "page")
+      const nav = page.getByRole("navigation", { name: "Admin workspace" })
+      await expect(nav.getByRole("link", { name: "Payouts" })).toHaveAttribute("aria-current", "page")
+      await nav.getByRole("link", { name: "Audit log" }).click()
+      await expect(page).toHaveURL(/\/dashboard\/admin\/audit$/)
     }
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Audit log")
   })
 
   test("the overview trend chart switches range and measure", async ({ page }) => {
@@ -216,13 +269,17 @@ test.describe("layout", () => {
     await page.getByRole("group", { name: "Date range" }).getByRole("button", { name: "7 days" }).click()
     await page.getByRole("group", { name: "Measure" }).getByRole("button", { name: "Bookings made" }).click()
     await expect(page.getByRole("figure", { name: /Bookings made per day, last 7 days/ })).toBeVisible()
+    await expect(page.getByRole("group", { name: "Date range" }).getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true")
     await expect(page.getByText(/vs previous 7 days/).first()).toBeVisible()
   })
 
   test("admin pages fit the screen at both sizes", async ({ page }) => {
     await actAs(page, "admin", ADMIN, "/dashboard/admin")
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
-    await page.goto("/dashboard/admin/transactions")
-    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
+    for (const path of ["/dashboard/admin/transactions", "/dashboard/admin/refunds", "/dashboard/admin/users"]) {
+      await page.goto(path)
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
+    }
   })
 })

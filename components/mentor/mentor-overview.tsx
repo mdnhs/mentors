@@ -1,201 +1,197 @@
 "use client"
 
-import Link from "next/link"
-import { ArrowRightIcon, CheckCircle2Icon, InfoIcon, StarIcon } from "lucide-react"
+import { ArrowRightIcon, CalendarClockIcon, CheckCircle2Icon, FileTextIcon, LayersIcon, MessageSquareQuoteIcon, StarIcon, WalletIcon, type LucideIcon } from "lucide-react"
 
-import { CancelSession } from "@/components/dashboard/cancel-session"
-import { MentorBookingCard } from "@/components/mentor/mentor-booking-card"
-import { MentorPageHeader } from "@/components/mentor/mentor-shell"
+import { GuardedLink } from "@/components/mentor/unsaved-guard"
 import { useMentorWorkspace } from "@/components/mentor/use-mentor-workspace"
-import { SessionBadge } from "@/components/sessions/session-badge"
-import { DateBlock } from "@/components/sessions/date-block"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { ListRow, PageHeader, Panel, PanelLink, PortalEmpty, Stat, StatStrip } from "@/components/portal/ui"
+import { WeekStrip, type WeekEvent } from "@/components/portal/week-strip"
+import { buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getMentorSessions, getReviews } from "@/lib/data"
+import { getMentorSessions, getRating, getReviews } from "@/lib/data"
 import { formatDate, formatPrice } from "@/lib/format"
-import { mentorTasks, splitMentorBookings } from "@/lib/mentor-dashboard"
+import { earningsByMonth } from "@/lib/mentor-finance"
+import { mentorTasks, splitMentorBookings, type MentorTask } from "@/lib/mentor-dashboard"
+import { MENTOR_BOOKINGS_HREF, monthTrend, splitSessions, withBookingsPage } from "@/lib/mentor-insights"
 import { resolveSession } from "@/lib/sessions"
-import { clearSampleData } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
+const taskIcons: Record<"payout" | "reviews" | "offer" | "schedule", LucideIcon> = { payout: WalletIcon, reviews: FileTextIcon, offer: LayersIcon, schedule: CalendarClockIcon }
+
+const taskKind = (task: MentorTask): keyof typeof taskIcons =>
+  task.id === "payout" ? "payout" : task.id === "reviews" ? "reviews" : task.id.startsWith("draft") || task.id === "no-live" ? "offer" : "schedule"
+
+const hourIn = (now: Date, timeZone: string) => Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(now))
+const greeting = (hour: number) => (hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening")
+
 export function MentorOverview() {
-  const { state, now, actor, mentor, bookings, summary } = useMentorWorkspace()
-  const header = <MentorPageHeader title="Overview" description="What needs your attention, your bookings and your earnings at a glance." />
+  const { state, now, mentor, bookings, summary, finance } = useMentorWorkspace()
+  const firstName = mentor.name.split(" ")[0]
+
   if (!now || !summary)
     return (
-      <div className="mt-6 space-y-6">
-        {header}
-        <Skeleton className="h-48 rounded-3xl" />
+      <div>
+        <PageHeader title={`Hi, ${firstName}`} />
+        <div className="space-y-6">
+          <Skeleton className="h-32 rounded-2xl" />
+          <Skeleton className="h-32 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
+        </div>
       </div>
     )
 
-  const { upcoming, completed, closed } = splitMentorBookings(bookings, now)
-  const tasks = mentorTasks({ bookings, offers: mentor.offers, availability: mentor.availability, summary, mentorTimezone: mentor.timezone }, now)
+  const { upcoming } = splitMentorBookings(bookings, now)
+  const tasks = withBookingsPage(mentorTasks({ bookings, offers: mentor.offers, availability: mentor.availability, summary, mentorTimezone: mentor.timezone }, now))
   const [top, ...rest] = tasks
-  const sessions = getMentorSessions(mentor.slug).map((session) => resolveSession(session, state))
+  const sessions = splitSessions(
+    getMentorSessions(mentor.slug).map((session) => resolveSession(session, state)),
+    now
+  ).upcoming
   const reviews = getReviews(mentor.slug).slice(0, 3)
-  const hasSamples = bookings.some((item) => item.booking.sample)
+  const rating = getRating(mentor.slug)
+  const month = monthTrend(earningsByMonth(finance, mentor.slug, now, 6, mentor.timezone))
   const cur = summary.currency
 
-  const stats = [
-    { label: "Estimated earnings", value: summary.estimatedEarnings, hint: "Your share of paid bookings" },
-    { label: "Ready to pay out", value: summary.availableForPayout, hint: "From completed sessions" },
-    { label: "Payout pending", value: summary.pendingPayouts, hint: "Requested, not yet sent" },
-    { label: "Paid out", value: summary.paidOut, hint: "Money actually sent" },
+  const events: WeekEvent[] = [
+    ...upcoming.map((item) => ({
+      id: item.booking.id,
+      startsAt: item.booking.date,
+      title: item.booking.kind === "review" ? `Review due: ${item.learner}` : item.learner,
+      href: MENTOR_BOOKINGS_HREF,
+      muted: item.booking.kind === "review",
+    })),
+    ...sessions.map((session) => ({ id: session.id, startsAt: session.startsAt, title: session.title, href: MENTOR_BOOKINGS_HREF })),
   ]
 
   return (
-    <div className="mt-6 space-y-10">
-      {header}
-      {hasSamples && (
-        <div role="note" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-warning-soft p-3 text-sm text-warning ring-1 ring-warning/20">
-          <InfoIcon className="size-4 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 flex-1">
-            <span className="font-medium">Demo workspace.</span> Bookings from other learners and their payments are made-up samples, and payouts are simulated.
-          </p>
-          <Button variant="outline" size="sm" onClick={clearSampleData}>
-            Clear sample data
-          </Button>
-        </div>
-      )}
+    <div className="space-y-8">
+      <PageHeader title={`${greeting(hourIn(now, mentor.timezone))}, ${firstName}`} className="mb-6" />
 
-      <section aria-labelledby="up-next" className="rounded-3xl bg-foreground p-5 text-background sm:p-7">
-        <p id="up-next" className="text-sm font-medium text-background/60">
+      <section aria-labelledby="up-next" className="rounded-2xl border border-primary/20 bg-accent/50 p-5 sm:p-6">
+        <h2 id="up-next" className="sr-only">
           Up next
-        </p>
+        </h2>
         {top ? (
-          <>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">{top.title}</h2>
-            <p className="mt-1 max-w-2xl text-background/70">{top.detail}</p>
-            <Link href={top.href} className={cn(buttonVariants({ size: "lg" }), "mt-5 bg-background text-foreground hover:bg-background/90 focus-visible:ring-background/60")}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <TaskIcon task={top} large />
+            <div className="min-w-0 flex-1">
+              <p className="text-lg font-semibold tracking-tight">{top.title}</p>
+              <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{top.detail}</p>
+            </div>
+            <GuardedLink href={top.href} className={cn(buttonVariants(), "shrink-0 self-start sm:self-center")}>
               {top.cta}
               <ArrowRightIcon aria-hidden="true" />
-            </Link>
-          </>
+            </GuardedLink>
+          </div>
         ) : (
-          <>
-            <h2 className="mt-1 flex items-center gap-2 text-xl font-semibold tracking-tight sm:text-2xl">
-              <CheckCircle2Icon className="size-6" aria-hidden="true" />
-              You&apos;re all set
-            </h2>
-            <p className="mt-1 text-background/70">Nothing needs your attention right now.</p>
-          </>
-        )}
-        {rest.length > 0 && (
-          <ul className="mt-6 divide-y divide-background/10 border-t border-background/10 text-sm">
-            {rest.slice(0, 3).map((task) => (
-              <li key={task.id}>
-                <Link href={task.href} className="flex items-center justify-between gap-3 rounded-md py-3 text-background/80 outline-none hover:text-background focus-visible:ring-3 focus-visible:ring-background/60">
-                  <span className="min-w-0 truncate">{task.title}</span>
-                  <ArrowRightIcon className="size-4 shrink-0" aria-hidden="true" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="snapshot">
-        <div className="flex items-baseline justify-between gap-4">
-          <h2 id="snapshot" className="text-subheading">
-            Earnings snapshot
-          </h2>
-          <Link href="/dashboard/mentor/earnings" className="link text-sm">
-            Details
-          </Link>
-        </div>
-        <dl className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {stats.map((item) => (
-            <div key={item.label} className="surface p-4">
-              <dt className="text-sm text-muted-foreground">{item.label}</dt>
-              <dd className="mt-1 text-lg font-semibold">{formatPrice(item.value, cur)}</dd>
-              <p className="mt-0.5 text-xs text-muted-foreground">{item.hint}</p>
+          <div className="flex items-center gap-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success">
+              <CheckCircle2Icon className="size-5" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-lg font-semibold tracking-tight">You&apos;re all set</p>
+              <p className="text-sm text-muted-foreground">Nothing needs your attention right now.</p>
             </div>
-          ))}
-        </dl>
-        <p className="mt-3 text-xs text-muted-foreground">Earnings are not paid out until a payout is sent. Demo mode: no real money moves.</p>
-      </section>
-
-      <section aria-labelledby="bookings" id="bookings" className="scroll-mt-24">
-        <h2 id="bookings" className="text-subheading">
-          Upcoming bookings
-        </h2>
-        {upcoming.length > 0 ? (
-          <ul className="mt-4 divide-y surface">
-            {upcoming.map((item) => (
-              <MentorBookingCard key={item.booking.id} item={item} now={now} actor={actor} mentorTimezone={mentor.timezone} />
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-4 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">No upcoming bookings yet. Published offers appear on your public profile.</p>
-        )}
-        <p className="mt-2 text-xs text-muted-foreground">Bookings confirm when the learner pays, so there are no requests to approve.</p>
-      </section>
-
-      <section aria-labelledby="live-sessions">
-        <h2 id="live-sessions" className="text-subheading">
-          Live group sessions
-        </h2>
-        <ul className="mt-4 divide-y surface">
-          {sessions.map((session) => (
-            <li key={session.id} className="flex items-center gap-4 p-4">
-              <DateBlock iso={session.startsAt} timeZone={session.timezone} />
-              <div className="min-w-0 flex-1">
-                <Link href={`/sessions/${session.id}`} className="font-medium hover:underline">
-                  {session.title}
-                </Link>
-                <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  {session.seats.taken} of {session.seats.total} seats taken
-                  <SessionBadge view={{ phase: session.status === "cancelled" ? "cancelled" : "scheduled", learner: "none", check: { open: true } }} />
-                </p>
-              </div>
-              {session.status !== "cancelled" && new Date(session.startsAt) > now && <CancelSession session={session} actor={actor} />}
-            </li>
-          ))}
-          {sessions.length === 0 && <li className="p-6 text-center text-sm text-muted-foreground">No live sessions scheduled.</li>}
-        </ul>
-      </section>
-
-      <section aria-labelledby="completed">
-        <h2 id="completed" className="text-subheading">
-          Completed bookings ({completed.length})
-        </h2>
-        {completed.length > 0 ? (
-          <ul className="mt-4 divide-y surface">
-            {completed.map((item) => (
-              <MentorBookingCard key={item.booking.id} item={item} now={now} actor={actor} mentorTimezone={mentor.timezone} />
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-4 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">Finished sessions will show here.</p>
-        )}
-        {closed.length > 0 && <p className="mt-2 text-xs text-muted-foreground">{closed.length} cancelled or expired {closed.length === 1 ? "booking is" : "bookings are"} not shown.</p>}
-      </section>
-
-      <section aria-labelledby="reviews">
-        <h2 id="reviews" className="text-subheading">
-          Recent verified reviews
-        </h2>
-        {reviews.length > 0 ? (
-          <ul className="mt-4 grid gap-3 sm:grid-cols-3">
-            {reviews.map((review) => (
-              <li key={review.id} className="surface p-4 text-sm">
-                <p className="flex items-center gap-1 font-medium">
-                  <StarIcon className="size-4 fill-rating text-rating" aria-hidden="true" />
-                  {review.rating.toFixed(1)}
-                  <span className="ml-1 font-normal text-muted-foreground">· {formatDate(review.date)}</span>
-                </p>
-                <p className="mt-2 line-clamp-4">{review.text}</p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {review.author}, {review.authorRole}
-                </p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-4 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">Reviews from learners who completed a booking will appear here.</p>
+          </div>
         )}
       </section>
+
+      <section aria-labelledby="week">
+        <div className="mb-3 flex items-baseline justify-between gap-4">
+          <h2 id="week" className="text-base font-semibold">
+            This week
+          </h2>
+          <PanelLink href={MENTOR_BOOKINGS_HREF}>All bookings</PanelLink>
+        </div>
+        <WeekStrip events={events} now={now} timeZone={mentor.timezone} />
+      </section>
+
+      <StatStrip label="At a glance">
+        <Stat label="Earned this month" value={formatPrice(month.current, cur)} delta={month.delta} trend={month.trend} href="/dashboard/mentor/earnings" />
+        <Stat label="Ready to pay out" value={formatPrice(summary.availableForPayout, cur)} hint={summary.pendingPayouts > 0 ? `${formatPrice(summary.pendingPayouts, cur)} pending` : "From completed sessions"} href="/dashboard/mentor/earnings" />
+        <Stat label="Upcoming bookings" value={upcoming.length} hint={sessions.length > 0 ? `+ ${sessions.length} group ${sessions.length === 1 ? "session" : "sessions"}` : undefined} href={MENTOR_BOOKINGS_HREF} />
+        <Stat
+          label="Average rating"
+          value={
+            rating ? (
+              <span className="inline-flex items-center gap-1">
+                <StarIcon className="size-5 fill-rating text-rating" aria-hidden="true" />
+                {rating.average.toFixed(1)}
+              </span>
+            ) : (
+              "—"
+            )
+          }
+          hint={rating ? `${rating.count} ${rating.count === 1 ? "review" : "reviews"}` : "No reviews yet"}
+        />
+      </StatStrip>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Panel id="attention" title="Needs attention">
+          {rest.length > 0 ? (
+            <ul className="divide-y">
+              {rest.map((task) => (
+                <li key={task.id}>
+                  <ListRow
+                    leading={<TaskIcon task={task} />}
+                    title={task.title}
+                    subtitle={task.detail}
+                    trailing={
+                      <GuardedLink href={task.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                        {task.cta}
+                        <span className="sr-only">: {task.title}</span>
+                      </GuardedLink>
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+              <CheckCircle2Icon className="size-4 text-success" aria-hidden="true" />
+              Nothing else to do.
+            </p>
+          )}
+        </Panel>
+
+        <Panel id="reviews" title="Recent reviews" action={rating && <span className="text-sm text-muted-foreground tabular-nums">{rating.count} total</span>}>
+          {reviews.length > 0 ? (
+            <ul className="divide-y">
+              {reviews.map((review) => (
+                <li key={review.id} className="py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Stars rating={review.rating} />
+                    <span className="text-xs text-muted-foreground">{formatDate(review.date)}</span>
+                  </div>
+                  <p className="mt-1.5 line-clamp-2 text-sm">“{review.text}”</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{review.author}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <PortalEmpty icon={MessageSquareQuoteIcon} title="No reviews yet" description="Learners review you after a completed booking." className="py-8" />
+          )}
+        </Panel>
+      </div>
     </div>
+  )
+}
+
+function TaskIcon({ task, large }: { task: MentorTask; large?: boolean }) {
+  const Icon = taskIcons[taskKind(task)]
+  return (
+    <span className={cn("flex shrink-0 items-center justify-center rounded-xl text-primary", large ? "size-11 bg-card" : "size-9 bg-accent")}>
+      <Icon className={large ? "size-5" : "size-4"} aria-hidden="true" />
+    </span>
+  )
+}
+
+function Stars({ rating }: { rating: number }) {
+  return (
+    <span className="flex items-center gap-0.5" role="img" aria-label={`${rating.toFixed(1)} out of 5 stars`}>
+      {Array.from({ length: 5 }, (_, index) => (
+        <StarIcon key={index} className={cn("size-3.5", index < Math.round(rating) ? "fill-rating text-rating" : "text-muted-foreground/40")} aria-hidden="true" />
+      ))}
+    </span>
   )
 }

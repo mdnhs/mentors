@@ -4,7 +4,8 @@ import { useState } from "react"
 import { BanIcon, PauseIcon, PlayIcon, RotateCcwIcon } from "lucide-react"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, ReasonDialog, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { ReasonDialog, notify, StatusBadge, moderationTone, sentenceCase } from "@/components/admin/parts"
+import { PageHeader, Stat, StatStrip } from "@/components/portal/ui"
 import { useAdminSource } from "@/components/admin/use-admin"
 import { Button } from "@/components/ui/button"
 import { usePrincipal } from "@/lib/auth"
@@ -98,14 +99,14 @@ export function MentorModeration() {
     },
     { id: "mentor", header: "Mentor", secondary: true, sortValue: (row) => row.mentor?.name ?? "", cell: (row) => <span className="text-muted-foreground">{row.mentor?.name ?? "—"}</span> },
     { id: "price", header: "Price", align: "right", sortValue: (row) => row.offer.price, cell: (row) => <span className="tabular-nums">{formatPrice(row.offer.price)}</span> },
-    { id: "catalogue", header: "Catalogue", secondary: true, csv: (row) => row.offer.status, cell: (row) => <StatusBadge tone={moderationTone(row.offer.status)}>{row.offer.status}</StatusBadge> },
+    { id: "catalogue", header: "Catalogue", secondary: true, csv: (row) => row.offer.status, cell: (row) => <StatusBadge tone={moderationTone(row.offer.status)}>{sentenceCase(row.offer.status)}</StatusBadge> },
     {
       id: "moderation",
       header: "Moderation",
       sortValue: (row) => row.status,
       cell: (row) => (
         <div className="space-y-1">
-          <StatusBadge tone={row.status === "paused" ? "warning" : "success"}>{row.status === "paused" ? "Paused" : "Live"}</StatusBadge>
+          <StatusBadge tone={moderationTone(row.status)}>{row.status === "paused" ? "Paused" : "Live"}</StatusBadge>
           {row.moderation?.reason && <p className="max-w-56 text-xs text-muted-foreground">{row.moderation.reason}</p>}
         </div>
       ),
@@ -129,75 +130,73 @@ export function MentorModeration() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Mentors & offers" description="Suspend a mentor or pause an offer. The decision is recorded with a reason; nothing is deleted." />
-      <DemoNotice>Moderation is recorded in this browser’s audit log. It does not change the public catalogue in this demo, which reads static data.</DemoNotice>
+    <div>
+      <PageHeader title="Mentors & offers" description="Suspend a mentor or pause an offer — with a reason, nothing deleted." />
 
-      <section aria-labelledby="mentor-table">
-        <h2 id="mentor-table" className="text-subheading">
-          Mentors
-        </h2>
-        <div className="mt-3">
-          <DataTable
-            rows={mentorRows}
-            columns={mentorColumns}
-            rowKey={(row) => row.mentor.slug}
-            urlKey="mentors"
-            exportFilename="mentors"
-            search={(row) => `${row.mentor.name} ${row.mentor.role} ${row.mentor.city} ${row.mentor.skills.join(" ")}`}
-            searchPlaceholder="Search mentors…"
-            searchLabel="Search mentors"
-            initialSort={{ columnId: "name", direction: "asc" }}
-            filters={[
-              {
-                id: "status",
-                label: "Status",
-                options: [
-                  { id: "active", label: "Active", match: (row) => row.status === "active" },
-                  { id: "suspended", label: "Suspended", match: (row) => row.status === "suspended" },
-                ],
-              },
-            ]}
-          />
-        </div>
-      </section>
+      <StatStrip label="Moderation summary" className="mb-6">
+        <Stat label="Active mentors" value={mentorRows.filter((row) => row.status === "active").length} />
+        <Stat label="Suspended mentors" value={mentorRows.filter((row) => row.status === "suspended").length} />
+        <Stat label="Live offers" value={offerRows.filter((row) => row.status === "live").length} />
+        <Stat label="Paused offers" value={offerRows.filter((row) => row.status === "paused").length} />
+      </StatStrip>
 
-      <section aria-labelledby="offer-table">
-        <h2 id="offer-table" className="text-subheading">
-          Offers
-        </h2>
-        <div className="mt-3">
-          <DataTable
-            rows={offerRows}
-            columns={offerColumns}
-            rowKey={(row) => row.offer.id}
-            urlKey="offers"
-            exportFilename="offers"
-            search={(row) => `${row.offer.title} ${row.mentor?.name ?? ""}`}
-            searchPlaceholder="Search offers…"
-            searchLabel="Search offers"
-            pageSize={8}
-            filters={[
-              {
-                id: "moderation",
-                label: "Moderation",
-                options: [
-                  { id: "live", label: "Live", match: (row) => row.status === "live" },
-                  { id: "paused", label: "Paused", match: (row) => row.status === "paused" },
-                ],
-              },
-              {
-                id: "status",
-                label: "Catalogue",
-                options: [
-                  { id: "published", label: "Published", match: (row) => row.offer.status === "published" },
-                  { id: "other", label: "Draft / paused", match: (row) => row.offer.status !== "published" },
-                ],
-              },
-            ]}
-          />
-        </div>
-      </section>
+      <div className="space-y-6">
+        <DataTable
+          title="Mentors"
+          anchor="mentor-table"
+          rows={mentorRows}
+          columns={mentorColumns}
+          rowKey={(row) => row.mentor.slug}
+          urlKey="mentors"
+          exportFilename="mentors"
+          search={(row) => `${row.mentor.name} ${row.mentor.role} ${row.mentor.city} ${row.mentor.skills.join(" ")}`}
+          searchPlaceholder="Search mentors…"
+          searchLabel="Search mentors"
+          initialSort={{ columnId: "name", direction: "asc" }}
+          filters={[
+            {
+              id: "status",
+              label: "Status",
+              options: [
+                { id: "active", label: "Active", match: (row) => row.status === "active" },
+                { id: "suspended", label: "Suspended", match: (row) => row.status === "suspended" },
+              ],
+            },
+          ]}
+        />
+
+        <DataTable
+          title="Offers"
+          anchor="offer-table"
+          rows={offerRows}
+          columns={offerColumns}
+          rowKey={(row) => row.offer.id}
+          urlKey="offers"
+          exportFilename="offers"
+          search={(row) => `${row.offer.title} ${row.mentor?.name ?? ""}`}
+          searchPlaceholder="Search offers…"
+          searchLabel="Search offers"
+          pageSize={8}
+          filters={[
+            {
+              id: "moderation",
+              label: "Moderation",
+              options: [
+                { id: "live", label: "Live", match: (row) => row.status === "live" },
+                { id: "paused", label: "Paused", match: (row) => row.status === "paused" },
+              ],
+            },
+            {
+              id: "status",
+              label: "Catalogue",
+              options: [
+                { id: "published", label: "Published", match: (row) => row.offer.status === "published" },
+                { id: "other", label: "Draft / paused", match: (row) => row.offer.status !== "published" },
+              ],
+            },
+          ]}
+        />
+      </div>
 
       {pending && (
         <ReasonDialog
@@ -215,11 +214,6 @@ export function MentorModeration() {
           onCancel={() => setPending(null)}
         />
       )}
-
-
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <SampleBadge /> marks demo records. Every action is re-checked in the domain layer, not only hidden here.
-      </p>
     </div>
   )
 }

@@ -1,19 +1,14 @@
 import type { Metadata } from "next"
 
 import { RequireRole } from "@/components/auth/require-role"
-import { Container } from "@/components/site/container"
 
 export const metadata: Metadata = {
-  title: "Application review",
+  title: "Applications",
 }
 
 // The page sits behind a client-side login gate, so it can't be part of the instant shell.
 export const instant = false
 
 export default function ReviewerLayout({ children }: LayoutProps<"/dashboard/reviewer">) {
-  return (
-    <Container className="max-w-5xl pt-8 pb-16 sm:pt-12 sm:pb-24">
-      <RequireRole role="reviewer">{children}</RequireRole>
-    </Container>
-  )
+  return <RequireRole role="reviewer">{children}</RequireRole>
 }

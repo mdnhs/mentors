@@ -10,5 +10,5 @@ export const metadata: Metadata = {
 export const instant = false
 
 export default function AdminApplicationsPage() {
-  return <ReviewQueue basePath="/dashboard/admin/applications" />
+  return <ReviewQueue basePath="/dashboard/admin/applications" title="Mentor applications" description="Review and decide on mentor applications." />
 }

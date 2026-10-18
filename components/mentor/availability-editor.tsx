@@ -3,9 +3,10 @@
 import { useState } from "react"
 import { CircleAlertIcon, CircleCheckIcon, PlusIcon, XIcon } from "lucide-react"
 
-import { MentorPageHeader } from "@/components/mentor/mentor-shell"
-import { UnsavedIndicator, useUnsavedGuard } from "@/components/mentor/unsaved-guard"
+import { SaveBar } from "@/components/mentor/save-bar"
+import { useUnsavedGuard } from "@/components/mentor/unsaved-guard"
 import { useMentorWorkspace } from "@/components/mentor/use-mentor-workspace"
+import { PageHeader, Panel } from "@/components/portal/ui"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -87,151 +88,170 @@ export function AvailabilityEditor() {
     setMessage(result.ok ? { tone: "ok", text: "Availability saved. Learners see the new times right away." } : { tone: "error", text: result.message ?? "Fix the highlighted fields." })
   }
 
+  const slotsPerDay = times.length
+  const weeklySlots = days.length * slotsPerDay
+
   return (
     <form
       noValidate
-      className="mt-6 max-w-2xl space-y-8"
       onSubmit={(event) => {
         event.preventDefault()
         save()
       }}
     >
-      <MentorPageHeader
-        title="Weekly availability"
-        description={`Times are in your timezone: ${now ? timezoneLabel(mentor.timezone, now) : mentor.timezone}. Learners see them in theirs.`}
-        actions={<UnsavedIndicator dirty={dirty} />}
-      />
+      <PageHeader title="Availability" description={`Times are in ${now ? timezoneLabel(mentor.timezone, now) : mentor.timezone}. Learners see theirs.`} />
 
-      <fieldset aria-describedby={errors.days ? "avail-days-error" : undefined}>
-        <legend className="text-sm font-medium">Days</legend>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {weekdays.map((label, day) => (
-            <button
-              key={label}
-              id={`avail-day-${day}`}
-              type="button"
-              aria-pressed={days.includes(day)}
-              onClick={() => {
-                setDays(toggle(days, day))
-                changed()
-              }}
-              className={cn("h-10 min-w-12 rounded-lg border bg-card px-3 text-sm transition hover:border-foreground/20 focus-ring", days.includes(day) && "border-primary bg-accent/60 font-medium")}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {errors.days && (
-          <p id="avail-days-error" className="mt-1 text-sm text-destructive">
-            {errors.days}
-          </p>
-        )}
-      </fieldset>
+      <div className="space-y-6">
+        <Panel id="schedule" title="Weekly schedule" action={<span className="text-sm text-muted-foreground tabular-nums">{weeklySlots} slots a week</span>}>
+          <fieldset aria-describedby={errors.days ? "avail-days-error" : undefined}>
+            <legend className="text-sm font-medium">Days</legend>
+            <div className="mt-2 grid grid-cols-7 gap-1.5 sm:gap-2">
+              {weekdays.map((label, day) => {
+                const open = days.includes(day)
+                return (
+                  <button
+                    key={label}
+                    id={`avail-day-${day}`}
+                    type="button"
+                    aria-pressed={open}
+                    onClick={() => {
+                      setDays(toggle(days, day))
+                      changed()
+                    }}
+                    className={cn(
+                      "flex h-16 flex-col items-center justify-center gap-1 rounded-xl border text-sm transition-colors focus-ring sm:h-20",
+                      open ? "border-primary/40 bg-accent font-medium text-accent-foreground" : "bg-card text-muted-foreground hover:border-foreground/20"
+                    )}
+                  >
+                    {label}
+                    <span aria-hidden="true" className={cn("text-xs tabular-nums", open ? "text-primary" : "text-muted-foreground/70")}>
+                      {open ? slotsPerDay : "Off"}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {errors.days && (
+              <p id="avail-days-error" className="mt-1 text-sm text-destructive">
+                {errors.days}
+              </p>
+            )}
+          </fieldset>
 
-      <fieldset aria-describedby={errors.times ? "avail-times-error" : days.length === 0 || times.length === 0 ? "avail-closed-warning" : undefined}>
-        <legend className="text-sm font-medium">Start times</legend>
-        <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-6">
-          {startTimes.map((time, index) => (
-            <button
-              key={time}
-              id={`avail-time-${index}`}
-              type="button"
-              aria-pressed={times.includes(time)}
-              onClick={() => {
-                setTimes(toggle(times, time).sort())
-                changed()
-              }}
-              className={cn("h-10 rounded-lg border bg-card text-sm transition hover:border-foreground/20 focus-ring", times.includes(time) && "border-primary bg-accent/60 font-medium")}
-            >
-              {time}
-            </button>
-          ))}
-        </div>
-        {errors.times && (
-          <p id="avail-times-error" className="mt-1 text-sm text-destructive">
-            {errors.times}
-          </p>
-        )}
-        {days.length === 0 || times.length === 0 ? (
-          <p id="avail-closed-warning" className="mt-2 text-sm text-warning">
-            With no days or times open, your calls can&apos;t be booked.
-          </p>
-        ) : null}
-      </fieldset>
-
-      <div className="grid gap-5 sm:grid-cols-3">
-        <NumberField id="avail-buffer" label="Buffer between calls (min)" value={buffer} error={errors.bufferMinutes} onChange={(value) => { setBuffer(value); changed() }} />
-        <NumberField id="avail-notice" label="Minimum notice (hours)" value={notice} error={errors.minNoticeHours} onChange={(value) => { setNotice(value); changed() }} />
-        <NumberField id="avail-advance" label="Book up to (days ahead)" value={advance} error={errors.maxAdvanceDays} onChange={(value) => { setAdvance(value); changed() }} />
-      </div>
-
-      <fieldset>
-        <legend className="text-sm font-medium">Days off</legend>
-        <div className="mt-2 flex flex-wrap items-end gap-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="avail-day-off" className="text-xs text-muted-foreground">
-              Add a day off
-            </Label>
-            <DatePicker
-              id="avail-day-off"
-              min={today || undefined}
-              value={dayOff}
-              aria-invalid={dayOffError || errors.unavailableDates ? true : undefined}
-              aria-describedby={dayOffError || errors.unavailableDates ? "avail-day-off-error" : "avail-day-off-help"}
-              onChange={(value) => {
-                setDayOff(value)
-                setDayOffError(null)
-              }}
-              className="w-52"
-            />
-          </div>
-          <Button type="button" variant="outline" onClick={addBlocked} disabled={!dayOff}>
-            <PlusIcon aria-hidden="true" />
-            Add
-          </Button>
-        </div>
-        {dayOffError || errors.unavailableDates ? (
-          <p id="avail-day-off-error" className="mt-1 text-sm text-destructive">
-            {dayOffError ?? errors.unavailableDates}
-          </p>
-        ) : (
-          <p id="avail-day-off-help" className="mt-1 text-xs text-muted-foreground">
-            Learners can&apos;t book you on these dates.
-          </p>
-        )}
-        {blocked.length > 0 ? (
-          <ul aria-label="Days off" className="mt-3 flex flex-wrap gap-2">
-            {blocked.map((date) => (
-              <li key={date} className={cn("inline-flex h-8 items-center gap-1 rounded-lg border bg-card pr-1 pl-2.5 text-sm", today && date < today && "text-muted-foreground")}>
-                <time dateTime={date}>{formatDate(`${date}T12:00:00Z`, "UTC")}</time>
+          <fieldset className="mt-6" aria-describedby={errors.times ? "avail-times-error" : days.length === 0 || times.length === 0 ? "avail-closed-warning" : undefined}>
+            <legend className="text-sm font-medium">Start times</legend>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {startTimes.map((time, index) => (
                 <button
+                  key={time}
+                  id={`avail-time-${index}`}
                   type="button"
+                  aria-pressed={times.includes(time)}
                   onClick={() => {
-                    setBlocked(blocked.filter((item) => item !== date))
+                    setTimes(toggle(times, time).sort())
                     changed()
                   }}
-                  className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-ring"
+                  className={cn(
+                    "h-9 rounded-full border px-3.5 text-sm tabular-nums transition-colors focus-ring",
+                    times.includes(time) ? "border-primary bg-primary font-medium text-primary-foreground" : "bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                  )}
                 >
-                  <XIcon className="size-3.5" aria-hidden="true" />
-                  <span className="sr-only">Remove {date}</span>
+                  {time}
                 </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-3 text-sm text-muted-foreground">No days off.</p>
-        )}
-      </fieldset>
+              ))}
+            </div>
+            {errors.times && (
+              <p id="avail-times-error" className="mt-1 text-sm text-destructive">
+                {errors.times}
+              </p>
+            )}
+            {days.length === 0 || times.length === 0 ? (
+              <p id="avail-closed-warning" className="mt-3 text-sm text-warning">
+                With no days or times open, your calls can&apos;t be booked.
+              </p>
+            ) : null}
+          </fieldset>
+        </Panel>
 
-      {message && (
-        <Alert variant={message.tone === "error" ? "destructive" : "success"} role={message.tone === "error" ? "alert" : "status"}>
-          {message.tone === "error" ? <CircleAlertIcon aria-hidden="true" /> : <CircleCheckIcon aria-hidden="true" />}
-          <AlertDescription className="text-current">{message.text}</AlertDescription>
-        </Alert>
-      )}
-      <Button type="submit" size="lg">
-        Save availability
-      </Button>
+        <Panel id="rules" title="Booking rules">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <NumberField id="avail-buffer" label="Buffer between calls (min)" value={buffer} error={errors.bufferMinutes} onChange={(value) => { setBuffer(value); changed() }} />
+            <NumberField id="avail-notice" label="Minimum notice (hours)" value={notice} error={errors.minNoticeHours} onChange={(value) => { setNotice(value); changed() }} />
+            <NumberField id="avail-advance" label="Book up to (days ahead)" value={advance} error={errors.maxAdvanceDays} onChange={(value) => { setAdvance(value); changed() }} />
+          </div>
+        </Panel>
+
+        <Panel id="days-off" title="Days off">
+          <fieldset>
+            <legend className="sr-only">Days off</legend>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="avail-day-off" className="text-xs text-muted-foreground">
+                  Add a day off
+                </Label>
+                <DatePicker
+                  id="avail-day-off"
+                  min={today || undefined}
+                  value={dayOff}
+                  aria-invalid={dayOffError || errors.unavailableDates ? true : undefined}
+                  aria-describedby={dayOffError || errors.unavailableDates ? "avail-day-off-error" : "avail-day-off-help"}
+                  onChange={(value) => {
+                    setDayOff(value)
+                    setDayOffError(null)
+                  }}
+                  className="w-52"
+                />
+              </div>
+              <Button type="button" variant="outline" onClick={addBlocked} disabled={!dayOff}>
+                <PlusIcon aria-hidden="true" />
+                Add
+              </Button>
+            </div>
+            {dayOffError || errors.unavailableDates ? (
+              <p id="avail-day-off-error" className="mt-1 text-sm text-destructive">
+                {dayOffError ?? errors.unavailableDates}
+              </p>
+            ) : (
+              <p id="avail-day-off-help" className="mt-1 text-xs text-muted-foreground">
+                Learners can&apos;t book you on these dates.
+              </p>
+            )}
+            {blocked.length > 0 ? (
+              <ul aria-label="Days off" className="mt-4 flex flex-wrap gap-2">
+                {blocked.map((date) => (
+                  <li key={date} className={cn("inline-flex h-8 items-center gap-1 rounded-full border bg-muted/50 pr-1 pl-3 text-sm tabular-nums", today && date < today && "text-muted-foreground")}>
+                    <time dateTime={date}>{formatDate(`${date}T12:00:00Z`, "UTC")}</time>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBlocked(blocked.filter((item) => item !== date))
+                        changed()
+                      }}
+                      className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-ring"
+                    >
+                      <XIcon className="size-3.5" aria-hidden="true" />
+                      <span className="sr-only">Remove {date}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">No days off.</p>
+            )}
+          </fieldset>
+        </Panel>
+
+        {message && (
+          <Alert variant={message.tone === "error" ? "destructive" : "success"} role={message.tone === "error" ? "alert" : "status"}>
+            {message.tone === "error" ? <CircleAlertIcon aria-hidden="true" /> : <CircleCheckIcon aria-hidden="true" />}
+            <AlertDescription className="text-current">{message.text}</AlertDescription>
+          </Alert>
+        )}
+      </div>
+
+      <SaveBar dirty={dirty} className="mt-6">
+        <Button type="submit">Save availability</Button>
+      </SaveBar>
     </form>
   )
 }

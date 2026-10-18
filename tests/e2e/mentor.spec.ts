@@ -12,12 +12,38 @@ test.beforeEach(async ({ page }) => {
 
 const stored = (page: Page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "{}"), STORAGE_KEY)
 const section = (page: Page, id: string) => page.locator(`section[aria-labelledby="${id}"]`)
-const nabila = (page: Page) => section(page, "bookings").locator("li").filter({ hasText: "Nabila Karim" })
-const offerRow = (page: Page, title: string) => page.locator("main li").filter({ hasText: title }).filter({ has: page.getByRole("button", { name: /Preview/ }) })
+// Stat strips only; the earnings breakdown is a dl too and repeats some labels.
+const stat = (page: Page, label: string) =>
+  page.getByRole("main").locator('dl[aria-label="At a glance"] > *, dl[aria-label="Balance"] > *').filter({ hasText: new RegExp(`^${label}`) })
+const upcoming = (page: Page) => page.getByRole("list", { name: "Upcoming bookings" })
+const nabila = (page: Page) => upcoming(page).getByRole("listitem").filter({ hasText: "Nabila Karim" })
+const offerRow = (page: Page, title: string) => page.getByRole("list", { name: "Your offers" }).getByRole("listitem").filter({ hasText: title })
+const offerAction = async (page: Page, title: string, action: string) => {
+  await page.getByRole("button", { name: `More actions for ${title}` }).click()
+  await page.getByRole("menuitem", { name: action }).click()
+}
+
+// The sidebar on desktop, the "More" sheet on phones.
+async function navigate(page: Page, label: string) {
+  // A "More" sheet still animating closed counts as visible and then detaches mid-click.
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  const sidebar = page.getByRole("navigation", { name: "Mentor workspace" })
+  if (!(await sidebar.isVisible())) await page.getByRole("button", { name: "Open menu" }).click()
+  await page.getByRole("navigation", { name: "Mentor workspace" }).getByRole("link", { name: label, exact: true }).click()
+}
+
+async function cancelNabila(page: Page) {
+  await page.goto("/dashboard/mentor/bookings")
+  await nabila(page).getByRole("button", { name: "Cancel and refund" }).click()
+  await expect(page.getByRole("alertdialog")).toContainText("refunded ৳3,150 in full")
+  await expect(page.getByRole("alertdialog")).toContainText("no real transfer")
+  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel booking" }).click()
+  await expect(page.getByRole("tabpanel")).not.toContainText("Nabila Karim")
+}
 
 test.describe("role permissions", () => {
   test("a signed-out visitor sees only a login prompt", async ({ page }) => {
-    for (const path of ["/dashboard/mentor", "/dashboard/mentor/offers", "/dashboard/mentor/earnings", "/dashboard/mentor/availability"]) {
+    for (const path of ["/dashboard/mentor", "/dashboard/mentor/bookings", "/dashboard/mentor/offers", "/dashboard/mentor/earnings", "/dashboard/mentor/availability"]) {
       await page.goto(path)
       await expect(page.getByRole("heading", { name: "Log in to open your workspace" })).toBeVisible()
       await expect(page.getByText("Estimated earnings")).toHaveCount(0)
@@ -26,12 +52,12 @@ test.describe("role permissions", () => {
 
   test("a learner is refused every mentor page and sees no mentor data", async ({ page }) => {
     await signedIn(page)
-    for (const path of ["/dashboard/mentor", "/dashboard/mentor/offers", "/dashboard/mentor/offers/new", "/dashboard/mentor/offers/tanvir-mock", "/dashboard/mentor/availability", "/dashboard/mentor/earnings"]) {
+    for (const path of ["/dashboard/mentor", "/dashboard/mentor/bookings", "/dashboard/mentor/offers", "/dashboard/mentor/offers/new", "/dashboard/mentor/offers/tanvir-mock", "/dashboard/mentor/availability", "/dashboard/mentor/earnings"]) {
       await page.goto(path)
       await expect(page.getByRole("heading", { name: "This area is for mentors" })).toBeVisible()
       await expect(page.getByText("Nabila Karim")).toHaveCount(0)
       await expect(page.getByText("Estimated earnings")).toHaveCount(0)
-      await expect(page.getByRole("button", { name: /Publish|Request demo payout/ })).toHaveCount(0)
+      await expect(page.getByRole("button", { name: /Publish|Request payout|Cancel and refund/ })).toHaveCount(0)
     }
   })
 
@@ -42,8 +68,7 @@ test.describe("role permissions", () => {
     await page.getByLabel("Password").fill("demo1234")
     await page.getByRole("button", { name: "Log in" }).click()
     await expect(page).toHaveURL(/\/dashboard\/mentor$/)
-    await expect(page.getByRole("main").getByText("Mentor workspace", { exact: true })).toBeVisible()
-    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening), Tanvir$/ })).toBeVisible()
   })
 
   test("the learner dashboard and booking details are not shown to a mentor", async ({ page }) => {
@@ -59,56 +84,105 @@ test.describe("role permissions", () => {
 test.describe("overview", () => {
   test.beforeEach(async ({ page }) => signedIn(page, { role: "mentor" }))
 
-  test("leads with the next task, then upcoming bookings with learner goals", async ({ page }) => {
+  test("greets the mentor and leads with the single most important task", async ({ page }) => {
     await page.goto("/dashboard/mentor")
-    await expect(section(page, "up-next")).toContainText("ready to pay out")
-    const upcoming = section(page, "bookings")
-    await expect(upcoming).toContainText("Nabila Karim")
-    await expect(upcoming).toContainText("Learner's goals")
-    await expect(upcoming).toContainText("payments service")
-    await expect(upcoming.locator("li").filter({ hasText: "Nabila Karim" }).getByText("Sample")).toBeVisible()
-    await expect(nabila(page).getByRole("button", { name: "Cancel and refund" })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Tanvir")
+    const next = section(page, "up-next")
+    await expect(next).toContainText("৳4,500 is ready to pay out")
+    await next.getByRole("link", { name: "Request payout" }).click()
+    await expect(page).toHaveURL(/\/dashboard\/mentor\/earnings$/)
   })
 
-  test("a session within a day becomes the top task", async ({ page }) => {
+  test("a session within a day becomes the top task and links to bookings", async ({ page }) => {
     await page.clock.setFixedTime(new Date("2026-10-26T01:00:00Z"))
     await page.goto("/dashboard/mentor")
-    await expect(section(page, "up-next")).toContainText("Get ready for System design mock interview")
-    await expect(section(page, "up-next")).toContainText("Nabila Karim")
+    const next = section(page, "up-next")
+    await expect(next).toContainText("Get ready for System design mock interview")
+    await expect(next).toContainText("Nabila Karim")
+    await next.getByRole("link", { name: "View booking" }).click()
+    await expect(page).toHaveURL(/\/dashboard\/mentor\/bookings$/)
   })
 
-  test("shows completed bookings, verified reviews and the demo notice", async ({ page }) => {
+  test("the week strip shows upcoming bookings and group sessions in the mentor's week", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-10-22T01:00:00Z"))
     await page.goto("/dashboard/mentor")
-    await expect(page.getByRole("note")).toContainText("Demo workspace")
-    await expect(section(page, "completed")).toContainText("Anika Rahman")
-    await expect(section(page, "completed")).toContainText("Imtiaz Hossain")
-    await expect(section(page, "reviews").getByRole("listitem")).toHaveCount(3)
+    const week = page.getByRole("list", { name: "Next seven days" })
+    await expect(week.getByRole("listitem").first()).toHaveAccessibleName(/^Today/)
+    await expect(week).toContainText("Nabila Karim")
   })
 
-  test("earnings are shown separately from money actually paid out", async ({ page }) => {
+  test("numbers sit in one strip: earnings this month, payout, bookings and rating", async ({ page }) => {
     await page.goto("/dashboard/mentor")
-    const snapshot = section(page, "snapshot")
-    await expect(snapshot.locator("div").filter({ hasText: /^Estimated earnings/ })).toContainText("৳7,200")
-    await expect(snapshot.locator("div").filter({ hasText: /^Paid out/ })).toContainText("৳0")
-    await expect(snapshot).toContainText("Earnings are not paid out until a payout is sent")
+    await expect(stat(page, "Earned this month")).toContainText("৳7,200")
+    await expect(stat(page, "Ready to pay out")).toContainText("৳4,500")
+    await expect(stat(page, "Upcoming bookings")).toContainText(/\d/)
+    await expect(stat(page, "Average rating")).toContainText(/\d\.\d/)
+    await expect(page.getByText("Demo workspace")).toHaveCount(0)
+    await expect(page.getByRole("note")).toHaveCount(0)
+  })
+
+  test("lists what else needs attention and recent reviews", async ({ page }) => {
+    await page.goto("/dashboard/mentor")
+    await expect(section(page, "attention-heading").getByRole("heading", { name: "Needs attention" })).toBeVisible()
+    await expect(section(page, "reviews-heading").getByRole("listitem")).toHaveCount(3)
+    await expect(section(page, "reviews-heading").getByRole("img", { name: /out of 5 stars/ }).first()).toBeVisible()
+  })
+})
+
+test.describe("bookings", () => {
+  test.beforeEach(async ({ page }) => signedIn(page, { role: "mentor" }))
+
+  test("upcoming bookings show the learner, amount, sample marker and goals", async ({ page }) => {
+    await page.goto("/dashboard/mentor/bookings")
+    await expect(page.getByRole("heading", { level: 1, name: "Bookings" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: /Upcoming/ })).toHaveAttribute("aria-selected", "true")
+    const row = nabila(page)
+    await expect(row).toContainText("System design mock interview")
+    await expect(row).toContainText("before fees")
+    await expect(row).toContainText("Confirmed")
+    await expect(row.getByText("Sample")).toBeVisible()
+    await expect(row.getByText(/payments service/)).toBeHidden()
+    await row.getByText("Learner's goals").click()
+    await expect(row.getByText(/payments service/)).toBeVisible()
+    await expect(row.getByRole("button", { name: "Cancel and refund" })).toBeVisible()
+  })
+
+  test("completed bookings have their own tab", async ({ page }) => {
+    await page.goto("/dashboard/mentor/bookings")
+    await page.getByRole("tab", { name: /Completed/ }).click()
+    const panel = page.getByRole("tabpanel", { name: /Completed/ })
+    await expect(panel).toContainText("Anika Rahman")
+    await expect(panel).toContainText("Imtiaz Hossain")
+    await expect(panel.getByRole("button", { name: "Cancel and refund" })).toHaveCount(0)
   })
 
   test("a mentor cancelling a booking refunds the learner in full", async ({ page }) => {
-    await page.goto("/dashboard/mentor")
-    await nabila(page).getByRole("button", { name: "Cancel and refund" }).click()
-    await expect(page.getByRole("dialog")).toContainText("refunded ৳3,150 in full")
-    await page.getByRole("dialog").getByRole("button", { name: "Cancel booking" }).click()
-    await expect(section(page, "bookings")).not.toContainText("Nabila Karim")
+    await cancelNabila(page)
+    await expect(page.getByText(/Booking cancelled/)).toBeVisible()
     const state = await stored(page)
     const order = state.incoming.orders.find((item: { id: string }) => item.id === "ORD-IB-3")
     expect(order).toMatchObject({ status: "refunded", refundPercent: 100 })
   })
 
+  test("group sessions show seats filled and can be cancelled before they start", async ({ page }) => {
+    await page.goto("/dashboard/mentor/bookings")
+    await page.getByRole("tab", { name: /Group sessions/ }).click()
+    const row = page.getByRole("tabpanel", { name: /Group sessions/ }).getByRole("listitem").filter({ hasText: "System Design Essentials" })
+    await expect(row.getByRole("progressbar", { name: /Seats filled/ })).toHaveAttribute("aria-valuetext", /of 30 seats taken/)
+    await row.getByRole("button", { name: "Cancel session" }).click()
+    await expect(page.getByRole("alertdialog")).toContainText("refunded in full")
+    await page.getByRole("alertdialog").getByRole("button", { name: "Cancel for everyone" }).click()
+    await expect(row).toContainText("Cancelled")
+    await expect(row.getByRole("button", { name: "Cancel session" })).toHaveCount(0)
+  })
+
   test("clearing sample data leaves honest empty states and zero money", async ({ page }) => {
-    await page.goto("/dashboard/mentor")
+    await page.goto("/dashboard/mentor/bookings")
     await page.getByRole("button", { name: "Clear sample data" }).click()
-    await expect(section(page, "bookings")).toContainText("No upcoming bookings yet")
-    await expect(section(page, "snapshot").locator("div").filter({ hasText: /^Estimated earnings/ })).toContainText("৳0")
+    await page.getByRole("alertdialog").getByRole("button", { name: "Clear sample data" }).click()
+    await expect(page.getByRole("tabpanel")).toContainText("No upcoming bookings")
+    await page.goto("/dashboard/mentor")
+    await expect(stat(page, "Earned this month")).toContainText("৳0")
     await expect(section(page, "up-next")).toContainText("all set")
   })
 })
@@ -118,36 +192,40 @@ test.describe("managing offers", () => {
 
   test("lists every offer with its status", async ({ page }) => {
     await page.goto("/dashboard/mentor/offers")
+    await expect(page.getByRole("heading", { level: 1, name: "Offers" })).toBeVisible()
     await expect(offerRow(page, "Career strategy call")).toContainText("Live")
     await expect(offerRow(page, "System Design Essentials")).toContainText("30 seats")
+    await expect(page.getByRole("link", { name: "New offer" })).toBeVisible()
   })
 
   test("pausing hides an offer from the public profile and resuming brings it back", async ({ page }) => {
     await page.goto("/dashboard/mentor/offers")
-    await page.getByRole("button", { name: "Pause Career strategy call" }).click()
+    await offerAction(page, "Career strategy call", "Pause")
     await expect(offerRow(page, "Career strategy call")).toContainText("Paused")
+    await expect(page.getByText("Career strategy call is paused")).toBeVisible()
     await page.goto("/mentors/tanvir-rahman")
     await expect(page.locator("#offers")).not.toContainText("Career strategy call")
     await page.goto("/dashboard/mentor/offers")
-    await page.getByRole("button", { name: "Resume Career strategy call" }).click()
+    await offerAction(page, "Career strategy call", "Resume")
     await page.goto("/mentors/tanvir-rahman")
     await expect(page.locator("#offers")).toContainText("Career strategy call")
   })
 
   test("archiving retires an offer, and restoring returns it as a draft", async ({ page }) => {
     await page.goto("/dashboard/mentor/offers")
-    await page.getByRole("button", { name: "Archive Resume & LinkedIn review" }).click()
+    await offerAction(page, "Resume & LinkedIn review", "Archive")
     await expect(offerRow(page, "Resume & LinkedIn review")).toContainText("Archived")
     await expect(offerRow(page, "Resume & LinkedIn review").getByRole("link", { name: /Edit/ })).toHaveCount(0)
     await page.goto("/mentors/tanvir-rahman")
     await expect(page.locator("#offers")).not.toContainText("Resume & LinkedIn review")
     await page.goto("/dashboard/mentor/offers")
-    await page.getByRole("button", { name: "Restore Resume & LinkedIn review" }).click()
+    await offerAction(page, "Resume & LinkedIn review", "Restore")
     await expect(offerRow(page, "Resume & LinkedIn review")).toContainText("Draft")
   })
 
   test("creating an offer rejects invalid prices and saves a valid one as a draft", async ({ page }) => {
     await page.goto("/dashboard/mentor/offers/new")
+    await expect(page.getByRole("heading", { level: 1, name: "What kind of offer?" })).toBeVisible()
     await page.getByRole("radio", { name: /1:1/ }).click()
     await page.getByRole("button", { name: "Continue" }).click()
     await page.getByLabel("Title").fill("Portfolio review call")
@@ -210,6 +288,8 @@ test.describe("managing offers", () => {
 
   test("editing a live offer's price changes what learners are charged", async ({ page }) => {
     await page.goto("/dashboard/mentor/offers/tanvir-career")
+    await expect(page.getByRole("heading", { level: 1, name: "Edit offer" })).toBeVisible()
+    await expect(page.getByRole("navigation", { name: "breadcrumb" })).toContainText("Career strategy call")
     await page.getByLabel("Price (৳)").fill("2500")
     await page.getByRole("button", { name: "Save changes" }).click()
     await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
@@ -236,6 +316,7 @@ test.describe("managing offers", () => {
   test("the editor flags unsaved changes and guards the breadcrumb", async ({ page }) => {
     await page.goto("/dashboard/mentor/offers/tanvir-career")
     await expect(page.getByText("Unsaved changes")).toHaveCount(0)
+    await expect(page.getByText("All changes saved")).toBeVisible()
     await page.getByLabel("Title").fill("")
     await expect(page.getByText("Unsaved changes")).toBeVisible()
     await page.getByRole("button", { name: "Save changes" }).click()
@@ -247,9 +328,18 @@ test.describe("managing offers", () => {
     await expect(page).toHaveURL(/\/dashboard\/mentor\/offers$/)
   })
 
+  test("the save bar stays clear of the phone tab bar", async ({ page }) => {
+    await page.goto("/dashboard/mentor/offers/tanvir-career")
+    const save = page.getByRole("button", { name: "Save changes" })
+    const tabs = page.getByRole("navigation", { name: "Mentor tabs" })
+    if (!(await tabs.isVisible())) return
+    const [saveBox, tabsBox] = [await save.boundingBox(), await tabs.boundingBox()]
+    expect(saveBox!.y + saveBox!.height).toBeLessThanOrEqual(tabsBox!.y)
+  })
+
   test("the preview dialog shows the public view of an offer", async ({ page }) => {
     await page.goto("/dashboard/mentor/offers")
-    await page.getByRole("button", { name: "Preview System design mock interview" }).click()
+    await offerAction(page, "System design mock interview", "Preview")
     const dialog = page.getByRole("dialog")
     await expect(dialog).toContainText("System design mock interview")
     await expect(dialog).toContainText("৳3,000")
@@ -267,6 +357,7 @@ test.describe("availability", () => {
 
   test("saves changes, validates limits, and warns when nothing is open", async ({ page }) => {
     await page.goto("/dashboard/mentor/availability")
+    await expect(page.getByRole("heading", { level: 1, name: "Availability" })).toBeVisible()
     await page.getByLabel("Minimum notice (hours)").fill("999")
     await expect(page.getByText("Notice must be 0 to 168 hours")).toBeVisible()
     await expect(page.getByText("Unsaved changes")).toBeVisible()
@@ -285,6 +376,7 @@ test.describe("availability", () => {
     await page.getByRole("button", { name: "Add", exact: true }).click()
     await expect(page.getByText("That day is already off")).toBeVisible()
     await page.getByRole("group", { name: "Days", exact: true }).getByRole("button", { name: "Mon" }).click()
+    await expect(page.getByRole("group", { name: "Days", exact: true }).getByRole("button", { name: "Mon" })).toHaveAttribute("aria-pressed", "true")
     await page.getByRole("button", { name: "Save availability" }).click()
     await expect(page.getByRole("status").filter({ hasText: "Availability saved" })).toBeVisible()
     await expect(page.getByText("Unsaved changes")).toHaveCount(0)
@@ -297,11 +389,11 @@ test.describe("availability", () => {
   test("leaving with unsaved changes asks first", async ({ page }) => {
     await page.goto("/dashboard/mentor/availability")
     await page.getByLabel("Buffer between calls (min)").fill("30")
-    await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Earnings" }).click()
+    await navigate(page, "Earnings")
     await expect(page.getByRole("alertdialog")).toContainText("Leave without saving?")
     await page.getByRole("button", { name: "Keep editing" }).click()
     await expect(page).toHaveURL(/\/availability$/)
-    await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Earnings" }).click()
+    await navigate(page, "Earnings")
     await page.getByRole("button", { name: "Discard changes" }).click()
     await expect(page).toHaveURL(/\/earnings$/)
   })
@@ -325,29 +417,34 @@ test.describe("earnings and payouts", () => {
     await page.goto("/dashboard/mentor/earnings")
     await expect(page.getByRole("heading", { level: 1, name: "Earnings" })).toBeVisible()
     await expect(page.getByRole("figure", { name: /Estimated earnings by month/ })).toBeVisible()
-    const earned = section(page, "earned")
-    await expect(earned.locator("div").filter({ hasText: /^Gross booking value/ })).toContainText("৳8,400")
-    await expect(earned.locator("div").filter({ hasText: /^Platform commission/ })).toContainText("৳800")
-    await expect(earned.locator("div").filter({ hasText: /^Estimated earnings/ })).toContainText("৳7,200")
-    await expect(earned).toContainText("can't be changed from your account")
+    await expect(stat(page, "Estimated earnings")).toContainText("৳7,200")
+    const breakdown = page.getByLabel("How earnings are worked out")
+    await expect(breakdown.locator("div").filter({ hasText: /^Learners paid/ })).toContainText("৳8,400")
+    await expect(breakdown.locator("div").filter({ hasText: /^Commission/ })).toContainText("৳800")
+    await expect(section(page, "request-heading")).toContainText("can't be changed from your account")
     await expect(page.getByLabel(/commission/i)).toHaveCount(0)
-    await expect(page.getByRole("note")).toContainText("no money is ever sent")
+    await expect(page.getByText("Demo mode.")).toHaveCount(0)
   })
 
-  test("a payout is pending until completed, and only then counts as paid out", async ({ page }) => {
+  test("a payout is confirmed, stays pending until completed, and only then counts as paid out", async ({ page }) => {
     await page.goto("/dashboard/mentor/earnings")
-    const payouts = section(page, "payouts")
-    await expect(payouts.locator("div").filter({ hasText: /^Ready to pay out/ })).toContainText("৳4,500")
+    await expect(stat(page, "Ready to pay out")).toContainText("৳4,500")
     await page.getByLabel("Amount (৳)").fill("2000")
-    await page.getByRole("button", { name: "Request demo payout" }).click()
-    await expect(payouts.locator("div").filter({ hasText: /^Payout pending/ })).toContainText("৳2,000")
-    await expect(payouts.locator("div").filter({ hasText: /^Paid out/ })).toContainText("৳0")
-    await expect(payouts.locator("div").filter({ hasText: /^Ready to pay out/ })).toContainText("৳2,500")
+    await page.getByRole("button", { name: "Request payout" }).click()
+    await expect(page.getByRole("alertdialog")).toContainText("no real transfer is made")
+    await page.getByRole("alertdialog").getByRole("button", { name: "Request payout" }).click()
+    await expect(page.getByText("Payout of ৳2,000 requested")).toBeVisible()
+    await expect(stat(page, "Payout pending")).toContainText("৳2,000")
+    await expect(stat(page, "Paid out")).toContainText("৳0")
+    await expect(stat(page, "Ready to pay out")).toContainText("৳2,500")
 
-    await page.getByRole("button", { name: /Complete demo payout/ }).click()
-    await expect(payouts.locator("div").filter({ hasText: /^Paid out/ })).toContainText("৳2,000")
-    await expect(payouts.locator("div").filter({ hasText: /^Payout pending/ })).toContainText("৳0")
-    await expect(payouts).toContainText("Paid (demo)")
+    const history = section(page, "history-heading")
+    await expect(history).toContainText("Pending")
+    await history.getByRole("button", { name: /Complete demo payout/ }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Mark as sent" }).click()
+    await expect(stat(page, "Paid out")).toContainText("৳2,000")
+    await expect(stat(page, "Payout pending")).toContainText("৳0")
+    await expect(history).toContainText("Paid (demo)")
     await expect(page.getByRole("button", { name: /Complete demo payout/ })).toHaveCount(0)
   })
 
@@ -355,45 +452,45 @@ test.describe("earnings and payouts", () => {
     await page.goto("/dashboard/mentor/earnings")
     for (const bad of ["10", "abc", "999999"]) {
       await page.getByLabel("Amount (৳)").fill(bad)
-      await page.getByRole("button", { name: "Request demo payout" }).click()
       await expect(page.getByRole("main").getByRole("alert")).toBeVisible()
+      await expect(page.getByRole("button", { name: "Request payout" })).toBeDisabled()
     }
     expect((await stored(page)).payouts ?? []).toEqual([])
   })
 
-  test("the money trail lists payments and payouts and keeps working after a refund", async ({ page }) => {
-    await page.goto("/dashboard/mentor")
-    await nabila(page).getByRole("button", { name: "Cancel and refund" }).click()
-    await page.getByRole("dialog").getByRole("button", { name: "Cancel booking" }).click()
-    await expect(section(page, "bookings")).not.toContainText("Nabila Karim")
+  test("the statement lists payments and payouts and keeps working after a refund", async ({ page }) => {
+    await cancelNabila(page)
     await page.goto("/dashboard/mentor/earnings")
-    const trail = section(page, "trail")
+    const trail = section(page, "trail-heading")
     await expect(trail).toContainText("Refund")
     await expect(trail).toContainText("-৳3,150")
     await expect(trail).toContainText("Earnings -৳2,700")
-    await expect(section(page, "earned").locator("div").filter({ hasText: /^Estimated earnings/ })).toContainText("৳4,500")
+    await expect(stat(page, "Estimated earnings")).toContainText("৳4,500")
   })
 })
 
 test.describe("layout", () => {
-  test("every workspace page fits the screen", async ({ page }) => {
+  test("every workspace page fits the screen with one heading and no demo banner", async ({ page }) => {
     await signedIn(page, { role: "mentor" })
-    for (const path of ["/dashboard/mentor", "/dashboard/mentor/offers", "/dashboard/mentor/offers/tanvir-career", "/dashboard/mentor/availability", "/dashboard/mentor/earnings"]) {
+    for (const path of ["/dashboard/mentor", "/dashboard/mentor/bookings", "/dashboard/mentor/offers", "/dashboard/mentor/offers/tanvir-career", "/dashboard/mentor/availability", "/dashboard/mentor/earnings"]) {
       await page.goto(path)
-      await expect(page.getByRole("main").getByText("Mentor workspace", { exact: true })).toBeVisible()
       await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1)
+      await expect(page.getByRole("main").getByText(/Demo workspace|Mentor workspace/)).toHaveCount(0)
       expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), path).toBe(false)
     }
   })
 
-  test("the workspace tabs navigate between pages", async ({ page }) => {
+  test("the portal navigation marks the current page and moves between pages", async ({ page }) => {
     await signedIn(page, { role: "mentor" })
     await page.goto("/dashboard/mentor")
-    const nav = page.getByRole("navigation", { name: "Workspace" })
+    const nav = page.getByRole("navigation", { name: /^Mentor (workspace|tabs)$/ })
     await expect(nav.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page")
+    await nav.getByRole("link", { name: "Bookings" }).click()
+    await expect(page).toHaveURL(/\/dashboard\/mentor\/bookings$/)
+    await expect(nav.getByRole("link", { name: "Bookings" })).toHaveAttribute("aria-current", "page")
     await nav.getByRole("link", { name: "Offers" }).click()
     await expect(nav.getByRole("link", { name: "Offers" })).toHaveAttribute("aria-current", "page")
-    await nav.getByRole("link", { name: "Earnings" }).click()
+    await navigate(page, "Earnings")
     await expect(page).toHaveURL(/\/earnings$/)
   })
 })

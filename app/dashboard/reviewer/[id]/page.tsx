@@ -21,5 +21,5 @@ export default function ReviewDetailPage({ params }: PageProps<"/dashboard/revie
 }
 
 async function Detail({ params }: Pick<PageProps<"/dashboard/reviewer/[id]">, "params">) {
-  return <ReviewDetail id={(await params).id} crumbs={[{ label: "Review queue", href: "/dashboard/reviewer" }]} />
+  return <ReviewDetail id={(await params).id} crumbs={[{ label: "Applications", href: "/dashboard/reviewer" }]} />
 }

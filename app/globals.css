@@ -6,6 +6,7 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-canvas: var(--canvas);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-satoshi), var(--font-hind-siliguri), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -61,6 +62,7 @@
 
 :root {
   --background: #fafaf8;
+  --canvas: #f6f6f3;
   --foreground: #171717;
   --card: #ffffff;
   --card-foreground: #171717;
@@ -103,6 +105,7 @@
 
 .dark {
   --background: #0f0f12;
+  --canvas: #0b0b0e;
   --foreground: #ededed;
   --card: #17171c;
   --card-foreground: #ededed;

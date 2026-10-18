@@ -16,7 +16,7 @@ export function OfferPreviewCard({ mentor, offer }: { mentor: Mentor; offer: Off
 
   return (
     <div className="surface p-4 shadow-card sm:p-5" aria-label="Public preview">
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Public preview</p>
+      <p className="text-xs font-medium text-muted-foreground">Public preview</p>
       <div className="mt-3 flex items-center gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
           <Icon className="size-4" aria-hidden="true" />

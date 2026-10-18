@@ -183,3 +183,54 @@ export function filterAudit(events: AdminAuditEvent[], filter: AuditFilter): Adm
 }
 
 export const auditActors = (events: AdminAuditEvent[]) => [...new Set(events.map((event) => event.actor))].sort()
+
+export type WorkQueue = { id: string; label: string; count: number; href: string }
+
+// The overview's "Needs action" list; each href opens the module pre-filtered to that queue.
+export function adminWorkQueues(source: AdminSource): WorkQueue[] {
+  const { admin } = source
+  return [
+    { id: "applications", label: "Applications to review", count: source.applications.filter((item) => item.status === "submitted" || item.status === "under-review").length, href: "/dashboard/admin/applications" },
+    { id: "refunds", label: "Refunds pending", count: allOrders(source).filter((order) => order.status === "refund-pending").length, href: "/dashboard/admin/refunds?refunds.status=pending" },
+    { id: "disputes", label: "Open disputes", count: admin.disputes.filter((item) => item.status === "open" || item.status === "investigating").length, href: "/dashboard/admin/refunds?disputes.status=unresolved#dispute-table" },
+    { id: "payouts", label: "Payouts pending", count: source.payouts.filter((item) => item.status === "pending").length, href: "/dashboard/admin/payouts?payouts.status=pending" },
+    { id: "tickets", label: "Open support tickets", count: admin.tickets.filter((item) => item.status === "open").length, href: "/dashboard/admin/users?tickets.status=open#ticket-table" },
+    { id: "accounts", label: "Restricted accounts", count: Object.values(admin.accounts).filter((item) => item.status === "restricted").length, href: "/dashboard/admin/users?accounts.status=restricted" },
+    {
+      id: "moderated",
+      label: "Moderated items",
+      count:
+        Object.values(admin.mentors).filter((item) => item.status === "suspended").length +
+        Object.values(admin.offers).filter((item) => item.status === "paused").length +
+        Object.values(admin.reviews).filter((item) => item.status === "hidden").length,
+      href: "/dashboard/admin/moderation?mentors.status=suspended&offers.moderation=paused",
+    },
+  ]
+}
+
+export const recentAudit = (events: AdminAuditEvent[], count = 5) => [...events].sort((a, b) => b.at.localeCompare(a.at)).slice(0, count)
+
+export type RefundStats = { openDisputes: number; refundsPending: number; refundsPendingValue: number; refundedThisMonth: number; refundedThisMonthCount: number }
+
+// "This month" is the calendar month in the given zone, counted from successful refund transactions.
+export function adminRefundStats(source: AdminSource, now: Date, timeZone = DHAKA_TZ): RefundStats {
+  const month = dateKeyInZone(now.getTime(), timeZone).slice(0, 7)
+  const orders = allOrders(source)
+  const pending = orders.filter((order) => order.status === "refund-pending")
+  const refunds = orders.flatMap((order) => order.transactions).filter((item) => item.kind === "refund" && item.status === "succeeded" && dateKeyInZone(Date.parse(item.at), timeZone).startsWith(month))
+  return {
+    openDisputes: source.admin.disputes.filter((item) => item.status === "open" || item.status === "investigating").length,
+    refundsPending: pending.length,
+    refundsPendingValue: pending.reduce((total, order) => total + (order.refundAmount ?? 0), 0),
+    refundedThisMonth: refunds.reduce((total, item) => total + item.amount, 0),
+    refundedThisMonthCount: refunds.length,
+  }
+}
+
+export type TransactionTotals = { charged: number; refunded: number; failed: number }
+
+export function adminTransactionTotals(rows: AdminTransactionRow[]): TransactionTotals {
+  const succeeded = rows.filter((row) => row.transaction.status === "succeeded")
+  const sum = (kind: Transaction["kind"]) => succeeded.filter((row) => row.transaction.kind === kind).reduce((total, row) => total + row.transaction.amount, 0)
+  return { charged: sum("charge"), refunded: sum("refund"), failed: rows.filter((row) => row.transaction.status === "failed").length }
+}

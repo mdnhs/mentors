@@ -179,7 +179,7 @@ test.describe("profile details", () => {
     await expect(page.getByText("Saved Tanvir Rahman")).toBeVisible()
     await page.reload()
     await expect(save).toHaveAttribute("aria-pressed", "true")
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/saved")
     await expect(page.locator("section[aria-labelledby=saved]")).toContainText("Tanvir Rahman")
   })
 })

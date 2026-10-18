@@ -4,7 +4,8 @@ import { useState } from "react"
 import { EyeIcon, EyeOffIcon, StarIcon } from "lucide-react"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, ReasonDialog, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { ReasonDialog, notify, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { PageHeader, Stat, StatStrip } from "@/components/portal/ui"
 import { useAdminSource } from "@/components/admin/use-admin"
 import { Button } from "@/components/ui/button"
 import { usePrincipal } from "@/lib/auth"
@@ -19,6 +20,7 @@ export function ReviewModeration() {
   const [pending, setPending] = useState<AdminReviewRow | null>(null)
 
   const rows = adminReviewRows(source)
+  const average = rows.length ? rows.reduce((total, row) => total + row.review.rating, 0) / rows.length : 0
 
   const run = (result: { ok: boolean; message?: string }, success: string) => {
     if (notify(result, success)) setPending(null)
@@ -60,7 +62,7 @@ export function ReviewModeration() {
       sortValue: (row) => row.status,
       cell: (row) => (
         <div className="space-y-1">
-          <StatusBadge tone={moderationTone(row.status === "hidden" ? "hidden" : "visible")}>{row.status === "hidden" ? "Hidden" : "Visible"}</StatusBadge>
+          <StatusBadge tone={moderationTone(row.status)}>{row.status === "hidden" ? "Hidden" : "Visible"}</StatusBadge>
           {row.moderation?.reason && <p className="max-w-56 text-xs text-muted-foreground">{row.moderation.reason}</p>}
         </div>
       ),
@@ -84,9 +86,15 @@ export function ReviewModeration() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Review moderation" description="Reviews are published only from completed bookings. Hide a review that breaks the guidelines." />
-      <DemoNotice>Hiding is recorded here. This demo’s public profile reads static data, so the storefront is not affected.</DemoNotice>
+    <div>
+      <PageHeader title="Review moderation" description="Hide a review that breaks the guidelines." />
+
+      <StatStrip label="Review summary" className="mb-6">
+        <Stat label="Visible" value={rows.filter((row) => row.status === "visible").length} />
+        <Stat label="Hidden" value={rows.filter((row) => row.status === "hidden").length} />
+        <Stat label="Average rating" value={average.toFixed(1)} hint={`From ${rows.length} reviews`} />
+        <Stat label="Low ratings" value={rows.filter((row) => row.review.rating <= 2).length} hint="1–2 stars" />
+      </StatStrip>
 
       <DataTable
         rows={rows}
@@ -131,11 +139,6 @@ export function ReviewModeration() {
           onCancel={() => setPending(null)}
         />
       )}
-
-
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <SampleBadge /> All reviews in this demo are made up and tied to sample completed bookings.
-      </p>
     </div>
   )
 }

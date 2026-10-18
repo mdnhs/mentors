@@ -271,7 +271,7 @@ test.describe("payment lifecycle", () => {
     await bookNusrat(page, 3)
     await next(page, /^Pay ৳/)
     await expect(page.getByRole("heading", { name: /You're booked with Nusrat/ })).toBeVisible()
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/bookings")
     const row = page.locator("section[aria-labelledby=bookings] li").filter({ hasText: "ML project review" })
     await row.getByRole("button", { name: "Cancel" }).click()
     await expect(page.getByRole("dialog")).toContainText("full refund of ৳")
@@ -311,7 +311,7 @@ test.describe("cancelling and rescheduling", () => {
     await next(page, /^Pay ৳/)
     await expect(page.getByRole("heading", { name: /You're booked with Nusrat/ })).toBeVisible()
 
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/bookings")
     const row = page.locator("section[aria-labelledby=bookings] li").filter({ hasText: "ML project review" })
     await row.getByRole("link", { name: "Reschedule" }).click()
     await expect(page.getByRole("heading", { name: "Reschedule ML project review" })).toBeVisible()
@@ -322,14 +322,14 @@ test.describe("cancelling and rescheduling", () => {
     await confirm.click()
     await expect(page.getByRole("heading", { name: "Session rescheduled" })).toBeVisible()
 
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/bookings")
     const moved = page.locator("section[aria-labelledby=bookings] li").filter({ hasText: "ML project review" })
     await expect(moved.getByRole("button", { name: "Reschedule" })).toBeDisabled()
     await expect(moved).toContainText("already been rescheduled once")
   })
 
   test("cancelling asks for confirmation, applies the refund policy and frees the status", async ({ page }) => {
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/bookings")
     const demoRow = page.locator("section[aria-labelledby=bookings] li").filter({ hasText: "System design mock interview" })
     await expect(demoRow).toContainText("Confirmed")
     await demoRow.getByRole("button", { name: "Cancel" }).click()

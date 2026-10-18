@@ -1,25 +1,28 @@
 "use client"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, SampleBadge, StatusBadge } from "@/components/admin/parts"
+import { CopyId, SampleBadge, StatusBadge, moderationTone, sentenceCase } from "@/components/admin/parts"
+import { PageHeader, Stat, StatStrip } from "@/components/portal/ui"
 import { useAdminSource } from "@/components/admin/use-admin"
-import { adminTransactionRows, type AdminTransactionRow } from "@/lib/admin-selectors"
+import { adminTransactionRows, adminTransactionTotals, type AdminTransactionRow } from "@/lib/admin-selectors"
 import { formatDate, formatPrice, formatTime } from "@/lib/format"
 import { getMentor } from "@/lib/data"
+import { cn } from "@/lib/utils"
 
 export function TransactionLog() {
   const source = useAdminSource()
   const rows = adminTransactionRows(source)
+  const totals = adminTransactionTotals(rows)
 
   const columns: Column<AdminTransactionRow>[] = [
-    { id: "id", header: "Transaction", sortValue: (row) => row.transaction.id, cell: (row) => <span className="font-mono text-xs">{row.transaction.id}</span> },
+    { id: "id", header: "Transaction", sortValue: (row) => row.transaction.id, cell: (row) => <CopyId value={row.transaction.id} /> },
     {
       id: "order",
       header: "Order",
       sortValue: (row) => row.order.id,
       cell: (row) => (
         <div>
-          <p className="font-medium">{row.order.id}</p>
+          <p className="whitespace-nowrap text-xs font-medium tabular-nums">{row.order.id}</p>
           <p className="text-xs text-muted-foreground">{getMentor(row.order.mentorSlug)?.name ?? row.order.mentorSlug}</p>
         </div>
       ),
@@ -28,10 +31,21 @@ export function TransactionLog() {
       id: "kind",
       header: "Type",
       sortValue: (row) => row.transaction.kind,
-      cell: (row) => <StatusBadge tone={row.transaction.kind === "refund" ? "warning" : "accent"}>{row.transaction.kind === "refund" ? "Refund" : "Charge"}</StatusBadge>,
+      cell: (row) => <span className="text-sm">{row.transaction.kind === "refund" ? "Refund" : "Charge"}</span>,
     },
-    { id: "amount", header: "Amount", align: "right", sortValue: (row) => row.transaction.amount, cell: (row) => <span className="tabular-nums">{formatPrice(row.transaction.amount, row.transaction.currency)}</span> },
-    { id: "status", header: "Result", sortValue: (row) => row.transaction.status, cell: (row) => <StatusBadge tone={row.transaction.status === "succeeded" ? "success" : "danger"}>{row.transaction.status}</StatusBadge> },
+    {
+      id: "amount",
+      header: "Amount",
+      align: "right",
+      sortValue: (row) => row.transaction.amount,
+      cell: (row) => (
+        <span className={cn("font-medium tabular-nums", row.transaction.kind === "refund" && "text-muted-foreground")}>
+          {row.transaction.kind === "refund" ? "−" : ""}
+          {formatPrice(row.transaction.amount, row.transaction.currency)}
+        </span>
+      ),
+    },
+    { id: "status", header: "Result", sortValue: (row) => row.transaction.status, cell: (row) => <StatusBadge tone={moderationTone(row.transaction.status)}>{sentenceCase(row.transaction.status)}</StatusBadge> },
     {
       id: "at",
       header: "At",
@@ -47,9 +61,14 @@ export function TransactionLog() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Payment transactions" description="Charges and refunds from the order records. Read-only; new entries only come from payment events." />
-      <DemoNotice>Every transaction here is simulated — no provider is contacted and no money moves. Records hold an amount, a currency and a result, never a card number or payment secret.</DemoNotice>
+    <div>
+      <PageHeader title="Payment transactions" description="Read-only charges and refunds, all simulated." />
+
+      <StatStrip label="Transaction totals" className="mb-6">
+        <Stat label="Charged" value={formatPrice(totals.charged)} hint="Successful charges" />
+        <Stat label="Refunded" value={formatPrice(totals.refunded)} hint="Successful refunds" />
+        <Stat label="Failed" value={totals.failed} hint="Charges or refunds" />
+      </StatStrip>
 
       <DataTable
         rows={rows}

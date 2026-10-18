@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { InfoIcon, MinusIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react"
+import { CopyIcon, InfoIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -13,20 +13,9 @@ import { cn } from "@/lib/utils"
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger" | "outline"
 
-export function AdminPageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-heading">{title}</h1>
-        {description && <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {actions}
-    </div>
-  )
-}
+export { PageHeader as AdminPageHeader } from "@/components/portal/ui"
 
-// Every admin screen carries the same honest framing: this interface records demo decisions and controls
-// no real payments, documents or accounts.
+// Kept for other portals that still import it; admin pages rely on the shell's "Demo data" chip instead.
 export function DemoNotice({ label = "Demo administration.", className, children }: { label?: string; className?: string; children?: React.ReactNode }) {
   return (
     <p role="note" className={cn("flex gap-2.5 rounded-xl bg-warning-soft p-3 text-sm text-warning ring-1 ring-warning/20", className)}>
@@ -39,38 +28,6 @@ export function DemoNotice({ label = "Demo administration.", className, children
   )
 }
 
-export function MetricCard({
-  label,
-  value,
-  detail,
-  tone = "neutral",
-  delta,
-}: {
-  label: string
-  value: string
-  detail?: string
-  tone?: "neutral" | "accent"
-  delta?: { change: number | null; period: string }
-}) {
-  const DeltaIcon = !delta || delta.change === null || delta.change === 0 ? MinusIcon : delta.change > 0 ? TrendingUpIcon : TrendingDownIcon
-  return (
-    <div className={cn("surface p-4", tone === "accent" && "border-primary/30 bg-accent/40")}>
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
-      {delta && (
-        <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-          <DeltaIcon className="size-3.5" aria-hidden="true" />
-          <span className="font-medium text-foreground tabular-nums">
-            {delta.change === null ? "No earlier data" : `${delta.change > 0 ? "+" : ""}${Math.round(delta.change * 100)}%`}
-          </span>
-          vs {delta.period}
-        </p>
-      )}
-      {detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}
-    </div>
-  )
-}
-
 export function StatusBadge({ tone, children }: { tone: Tone; children: React.ReactNode }) {
   return <Badge tone={tone}>{children}</Badge>
 }
@@ -79,34 +36,107 @@ export function SampleBadge() {
   return <Badge tone="outline">Sample</Badge>
 }
 
+// One tone per meaning across the admin workspace: done = success, in motion = accent, waiting = warning,
+// failed or punitive = danger, finished without action = neutral.
 export function moderationTone(status: string): Tone {
   switch (status) {
-    case "active":
     case "live":
     case "visible":
-    case "refunded":
     case "paid":
     case "completed":
-    case "confirmed":
+    case "approved":
+    case "succeeded":
+    case "published":
       return "success"
+    case "active":
+    case "confirmed":
+    case "scheduled":
+      return "accent"
     case "suspended":
     case "restricted":
     case "declined":
-    case "hidden":
-    case "cancelled":
+    case "rejected":
+    case "failed":
     case "payment-failed":
+    case "refunded":
       return "danger"
     case "paused":
     case "open":
-    case "investigating":
     case "pending":
     case "refund-pending":
     case "in-review":
-    case "expired":
+    case "investigating":
+    case "submitted":
+    case "requested":
+    case "draft":
       return "warning"
     default:
       return "neutral"
   }
+}
+
+export const statusTone = moderationTone
+
+// Turns stored slugs such as "refund-pending" into sentence-case badge text.
+export const sentenceCase = (value: string) => {
+  const text = value.replace(/-/g, " ")
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+export function CopyId({ value, className }: { value: string; className?: string }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success("Copied", { description: value })
+    } catch {
+      toast.error("Couldn't copy to the clipboard.")
+    }
+  }
+  return (
+    <span className={cn("inline-flex items-center gap-1", className)}>
+      <span className="whitespace-nowrap text-xs tabular-nums">{value}</span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={`Copy ID ${value}`}
+        className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-ring"
+      >
+        <CopyIcon className="size-3.5" aria-hidden="true" />
+      </button>
+    </span>
+  )
+}
+
+// A compact single-choice control; buttons expose aria-pressed like the filter chips do.
+export function Segmented<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <div role="group" aria-label={label} className="inline-flex rounded-lg bg-muted p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={option.value === value}
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "h-7 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors focus-ring",
+            option.value === value ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 // The domain layer validates the reason again; the length rule here is only a hint.

@@ -57,6 +57,10 @@ export type DataTableProps<T> = {
   // Filters kept outside the table (e.g. in the toolbar); a new value sends the table back to page one.
   pageResetKey?: string
   extraFilters?: ExtraFilter[]
+  // Renders an h2 inside the table card; use when a page holds more than one table.
+  title?: string
+  // Element id, so a link can jump straight to this table.
+  anchor?: string
 }
 
 export function DataTable<T>(props: DataTableProps<T>) {
@@ -88,6 +92,8 @@ function DataTableInner<T>({
   toolbar,
   pageResetKey,
   extraFilters = [],
+  title,
+  anchor,
 }: DataTableProps<T>) {
   const params = useSearchParams()
   const param = (name: string) => params.get(paramKey(urlKey, name))
@@ -199,19 +205,28 @@ function DataTableInner<T>({
   ]
   const hideable = columns.filter((column, index) => index > 0 && column.hideable !== false)
 
+  const countLabel = loading ? "Loading records…" : sorted.length === rows.length ? `${rows.length} ${rows.length === 1 ? "record" : "records"}` : `${sorted.length} of ${rows.length} records`
+  const headingId = title ? `${id}-title` : undefined
+
   return (
-    <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <section id={anchor} aria-labelledby={headingId} className="overflow-hidden rounded-2xl border bg-card">
+      {title && (
+        <div className="flex items-baseline justify-between gap-3 px-4 pt-4 sm:px-5">
+          <h2 id={headingId} className="text-base font-semibold">
+            {title}
+          </h2>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
         {search ? (
-          <div className="sm:max-w-xs sm:flex-1">
-            <SearchInput value={query} onChange={changeQuery} label={searchLabel} placeholder={searchPlaceholder} />
-          </div>
+          <SearchInput value={query} onChange={changeQuery} label={searchLabel} placeholder={searchPlaceholder} className="h-9 rounded-lg shadow-none sm:max-w-xs sm:flex-1" />
         ) : (
           <div />
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <p className="mr-1 text-sm text-muted-foreground" role="status">
-            {loading ? "Loading records…" : sorted.length === rows.length ? `${rows.length} ${rows.length === 1 ? "record" : "records"}` : `${sorted.length} of ${rows.length} records`}
+          <p className="mr-1 text-sm text-muted-foreground tabular-nums" role="status">
+            {countLabel}
           </p>
           {hideable.length > 0 && (
             <DropdownMenu>
@@ -241,16 +256,24 @@ function DataTableInner<T>({
       </div>
 
       {(filters.length > 0 || toolbar) && (
-        <div className="scrollbar-none -mx-4 mt-3 flex gap-4 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label="Filters">
+        <div className="scrollbar-none flex gap-x-5 gap-y-2 overflow-x-auto px-3 pb-3 sm:flex-wrap sm:px-4" role="group" aria-label="Filters">
           {filters.map((group) => (
             <div key={group.id} className="flex shrink-0 items-center gap-2" role="group" aria-label={group.label}>
-              <span className="text-xs font-medium text-muted-foreground">{group.label}</span>
-              <div className="flex gap-1.5">
-                {group.options.map((option) => (
-                  <Chip key={option.id} active={selected[group.id] === option.id} onClick={() => choose(group.id, option.id)} className="h-8 px-2.5">
-                    {option.label}
-                  </Chip>
-                ))}
+              <span className="text-xs text-muted-foreground">{group.label}</span>
+              <div className="flex gap-1">
+                {group.options.map((option) => {
+                  const on = selected[group.id] === option.id
+                  return (
+                    <Chip
+                      key={option.id}
+                      active={on}
+                      onClick={() => choose(group.id, option.id)}
+                      className={cn("h-7 rounded-md px-2.5 text-xs", on ? "border-primary/40 bg-accent text-accent-foreground" : "bg-transparent text-muted-foreground hover:text-foreground")}
+                    >
+                      {option.label}
+                    </Chip>
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -259,16 +282,16 @@ function DataTableInner<T>({
       )}
 
       {activeFilters.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="Active filters" role="group">
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 sm:px-4" aria-label="Active filters" role="group">
           {activeFilters.map((filter) => (
             <button
               key={filter.id}
               type="button"
               onClick={filter.onClear}
-              className="inline-flex h-7 items-center gap-1 rounded-md border bg-card pr-1.5 pl-2 text-xs text-muted-foreground focus-ring hover:text-foreground"
+              className="inline-flex h-7 items-center gap-1 rounded-full bg-muted pr-1.5 pl-2.5 text-xs font-medium transition-colors hover:bg-muted/70 focus-ring"
             >
               {filter.label}
-              <XIcon className="size-3.5" aria-hidden="true" />
+              <XIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
               <span className="sr-only">Clear filter</span>
             </button>
           ))}
@@ -281,8 +304,8 @@ function DataTableInner<T>({
       )}
 
       {selectable && pickedRows.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-accent/40 p-2 pl-3" role="region" aria-label="Bulk actions">
-          <span className="text-sm font-medium">{pickedRows.length} selected</span>
+        <div className="mx-3 mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-accent p-2 pl-3 text-accent-foreground sm:mx-4" role="region" aria-label="Bulk actions">
+          <span className="text-sm font-medium tabular-nums">{pickedRows.length} selected</span>
           <div className="flex flex-wrap gap-1.5">{bulkActions?.(pickedRows, () => setPicked(new Set()))}</div>
           <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setPicked(new Set())}>
             Clear selection
@@ -290,13 +313,13 @@ function DataTableInner<T>({
         </div>
       )}
 
-      <div className="surface mt-4 overflow-hidden">
+      <div className="border-t">
         <Table aria-busy={loading || undefined}>
           {caption && <caption className="sr-only">{caption}</caption>}
-          <TableHeader>
+          <TableHeader className="bg-muted/40">
             <TableRow className="hover:bg-transparent">
               {selectable && (
-                <TableHead className="w-10">
+                <TableHead className="w-10 pl-4">
                   <Checkbox
                     checked={allOnPage}
                     indeterminate={someOnPage && !allOnPage}
@@ -322,16 +345,16 @@ function DataTableInner<T>({
                     key={column.id}
                     scope="col"
                     aria-sort={column.sortValue ? (isSorted ? (sort.direction === "asc" ? "ascending" : "descending") : "none") : undefined}
-                    className={cn(column.align === "right" && "text-right", column.secondary && "hidden md:table-cell", column.className)}
+                    className={cn("first:pl-4 last:pr-4", column.align === "right" && "text-right", column.secondary && "hidden md:table-cell", column.className)}
                   >
                     {column.sortValue ? (
                       <button
                         type="button"
                         onClick={() => toggleSort(column)}
-                        className={cn("inline-flex items-center gap-1 rounded-sm focus-ring hover:text-foreground", isSorted && "text-foreground")}
+                        className={cn("group/sort inline-flex items-center gap-1 rounded-sm transition-colors focus-ring hover:text-foreground", isSorted && "text-foreground")}
                       >
                         {column.header}
-                        <SortIcon className="size-3.5" aria-hidden="true" />
+                        <SortIcon className={cn("size-3.5", !isSorted && "opacity-40 group-hover/sort:opacity-100")} aria-hidden="true" />
                         <span className="sr-only">, sort</span>
                       </button>
                     ) : (
@@ -341,7 +364,7 @@ function DataTableInner<T>({
                 )
               })}
               {secondary.length > 0 && (
-                <TableHead className="w-10 md:hidden">
+                <TableHead className="w-10 pr-4 md:hidden">
                   <span className="sr-only">Details</span>
                 </TableHead>
               )}
@@ -352,7 +375,7 @@ function DataTableInner<T>({
               Array.from({ length: Math.min(pageSize, 5) }, (_, index) => (
                 <TableRow key={index} className="hover:bg-transparent">
                   {Array.from({ length: totalColumns }, (_, cell) => (
-                    <TableCell key={cell}>
+                    <TableCell key={cell} className="first:pl-4 last:pr-4">
                       <Skeleton className="h-4 w-full max-w-32" />
                     </TableCell>
                   ))}
@@ -364,21 +387,21 @@ function DataTableInner<T>({
                 const isOpen = expanded.has(key)
                 const detailId = `${id}-${key}-details`
                 const cells = (
-                  <TableRow key={key} data-state={picked.has(key) ? "selected" : undefined}>
+                  <TableRow key={key} data-state={picked.has(key) ? "selected" : undefined} className={cn("hover:bg-muted/40 data-[state=selected]:bg-accent/50", isOpen && "border-b-0")}>
                     {selectable && (
-                      <TableCell>
+                      <TableCell className="pl-4">
                         <Checkbox checked={picked.has(key)} onCheckedChange={() => setPicked((current) => toggleSet(current, key))} aria-label={`Select row ${key}`} />
                       </TableCell>
                     )}
                     {visible.map((column) => (
-                      <TableCell key={column.id} className={cn(column.align === "right" && "text-right", column.secondary && "hidden md:table-cell", column.className)}>
+                      <TableCell key={column.id} className={cn("first:pl-4 last:pr-4", column.align === "right" && "text-right", column.secondary && "hidden md:table-cell", column.className)}>
                         {column.cell(row)}
                       </TableCell>
                     ))}
                     {secondary.length > 0 && (
-                      <TableCell className="md:hidden">
+                      <TableCell className="pr-4 md:hidden">
                         <Button variant="ghost" size="icon-sm" aria-expanded={isOpen} aria-controls={isOpen ? detailId : undefined} onClick={() => setExpanded((current) => toggleSet(current, key))}>
-                          <ChevronDownIcon className={cn("transition-transform", isOpen && "rotate-180")} aria-hidden="true" />
+                          <ChevronDownIcon className={cn("transition-transform motion-reduce:transition-none", isOpen && "rotate-180")} aria-hidden="true" />
                           <span className="sr-only">{isOpen ? "Hide details" : "Show details"}</span>
                         </Button>
                       </TableCell>
@@ -389,12 +412,12 @@ function DataTableInner<T>({
                 return [
                   cells,
                   <TableRow key={`${key}-details`} id={detailId} className="bg-muted/30 hover:bg-muted/30 md:hidden">
-                    <TableCell colSpan={totalColumns}>
-                      <dl className="grid gap-2">
+                    <TableCell colSpan={totalColumns} className="px-4 pt-0 pb-3">
+                      <dl className="grid gap-x-4 gap-y-2.5 rounded-lg border bg-card p-3 sm:grid-cols-2">
                         {secondary.map((column) => (
-                          <div key={column.id} className="grid gap-0.5">
-                            <dt className="text-xs font-medium text-muted-foreground">{column.header}</dt>
-                            <dd>{column.cell(row)}</dd>
+                          <div key={column.id} className="grid min-w-0 gap-0.5">
+                            <dt className="text-xs text-muted-foreground">{column.header}</dt>
+                            <dd className="min-w-0 text-sm">{column.cell(row)}</dd>
                           </div>
                         ))}
                       </dl>
@@ -404,7 +427,7 @@ function DataTableInner<T>({
               })
             ) : (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={totalColumns} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={totalColumns} className="py-12 text-center text-sm text-muted-foreground">
                   {empty ?? "No records match these filters."}
                 </TableCell>
               </TableRow>
@@ -414,9 +437,9 @@ function DataTableInner<T>({
       </div>
 
       {!loading && sorted.length > pageSize && (
-        <nav aria-label={`${searchLabel.replace(/^Search /, "")} pages`} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            Showing {safePage * pageSize + 1}–{Math.min(sorted.length, safePage * pageSize + pageSize)} of {sorted.length}
+        <nav aria-label={`${searchLabel.replace(/^Search /, "")} pages`} className="flex flex-col gap-2 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <p className="text-sm text-muted-foreground tabular-nums">
+            {safePage * pageSize + 1}–{Math.min(sorted.length, safePage * pageSize + pageSize)} of {sorted.length}
           </p>
           <ul className="flex flex-wrap items-center gap-1">
             <li>
@@ -431,14 +454,23 @@ function DataTableInner<T>({
                   …
                 </li>
               ) : (
-                <li key={index}>
-                  <Button variant={index === safePage ? "default" : "ghost"} size="sm" aria-current={index === safePage ? "page" : undefined} onClick={() => goToPage(index)}>
+                <li key={index} className="hidden sm:block">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-current={index === safePage ? "page" : undefined}
+                    onClick={() => goToPage(index)}
+                    className={cn("min-w-7 tabular-nums", index === safePage && "bg-accent text-accent-foreground hover:bg-accent")}
+                  >
                     <span className="sr-only">Page </span>
                     {index + 1}
                   </Button>
                 </li>
               )
             )}
+            <li className="px-1 text-sm text-muted-foreground tabular-nums sm:hidden">
+              {safePage + 1} / {pageCount}
+            </li>
             <li>
               <Button variant="outline" size="sm" onClick={() => goToPage(Math.min(pageCount - 1, safePage + 1))} disabled={safePage >= pageCount - 1}>
                 Next
@@ -448,15 +480,17 @@ function DataTableInner<T>({
           </ul>
         </nav>
       )}
-    </div>
+    </section>
   )
 }
 
 function TableSkeleton({ columns, rows }: { columns: number; rows: number }) {
   return (
-    <div aria-busy="true" aria-label="Loading records" className="space-y-3">
-      <Skeleton className="h-12 w-full max-w-xs rounded-xl" />
-      <div className="surface space-y-3 p-4">
+    <div aria-busy="true" aria-label="Loading records" className="overflow-hidden rounded-2xl border bg-card">
+      <div className="p-3 sm:px-4">
+        <Skeleton className="h-9 w-full max-w-xs rounded-lg" />
+      </div>
+      <div className="space-y-3 border-t p-4">
         {Array.from({ length: rows }, (_, row) => (
           <div key={row} className="flex gap-3">
             {Array.from({ length: columns }, (_, cell) => (

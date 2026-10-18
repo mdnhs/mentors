@@ -5,19 +5,22 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { BookingActions } from "@/components/dashboard/booking-actions"
-import { Button } from "@/components/ui/button"
-import { MeetingCard } from "@/components/sessions/meeting-card"
 import { MentorAvatar } from "@/components/mentors/mentor-avatar"
 import { DateBlock } from "@/components/sessions/date-block"
+import { MeetingCard } from "@/components/sessions/meeting-card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { bookingStatusLabels } from "@/lib/admin-selectors"
 import { effectiveStatus, isActive } from "@/lib/booking-policy"
-import { bookingHref } from "@/lib/dashboard"
-import { orderStatusLabels, type Order } from "@/lib/orders"
-import { resetStalledPayment, settleDemoRefund } from "@/lib/payment-client"
-import type { PaymentOutcome } from "@/lib/payment-service"
 import { offerTypeLabels } from "@/lib/categories"
+import { bookingHref } from "@/lib/dashboard"
 import { getMentor, getSession } from "@/lib/data"
 import { formatPrice, formatTime } from "@/lib/format"
-import { bookingStatusLabels } from "@/lib/admin-selectors"
+import { bookingEnd } from "@/lib/availability"
+import { bookingTone, orderTone, type BadgeTone } from "@/lib/learner-insights"
+import { orderStatusLabels } from "@/lib/orders"
+import { resetStalledPayment, settleDemoRefund } from "@/lib/payment-client"
+import type { PaymentOutcome } from "@/lib/payment-service"
 import { useAppState, useNow } from "@/lib/store"
 import type { Booking, BookingStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -31,24 +34,15 @@ export const statusStyles: Record<BookingStatus, { label: string; className: str
   expired: { label: bookingStatusLabels.expired, className: "bg-muted text-muted-foreground" },
 }
 
-type BookingRowProps = {
-  booking: Booking
-  // Who the row is "with": the mentor for learners, the learner for mentors.
-  person?: { name: string; photo?: string }
-}
-
 export function SamplePill({ className }: { className?: string }) {
-  return <span className={cn("inline-block rounded-md border border-dashed px-1.5 py-0.5 text-xs text-muted-foreground", className)}>Sample</span>
+  return (
+    <Badge tone="outline" className={className}>
+      Sample
+    </Badge>
+  )
 }
 
-const paymentTone: Partial<Record<Order["status"], string>> = {
-  "awaiting-payment": "text-warning",
-  processing: "text-warning",
-  "payment-failed": "text-destructive",
-  "refund-pending": "text-warning",
-}
-
-export function BookingRow({ booking, person }: BookingRowProps) {
+export function BookingRow({ booking, timeZone }: { booking: Booking; timeZone: string }) {
   const now = useNow()
   const { orders, bookings, cancelledSessions } = useAppState()
   const [paymentBusy, setPaymentBusy] = useState(false)
@@ -56,14 +50,20 @@ export function BookingRow({ booking, person }: BookingRowProps) {
   const order = orders.find((item) => item.bookingId === booking.id)
   const mentor = getMentor(booking.mentorSlug)
   if (!mentor) return null
-  const counterpart = person ?? mentor
+
   const stateStatus = now ? effectiveStatus(booking, now) : booking.status
   const unpaid = order && stateStatus === "pending"
   const sessionCancelled = Boolean(booking.sessionId && cancelledSessions[booking.sessionId]) && stateStatus === "cancelled"
   const groupSession = booking.kind === "group" && booking.sessionId ? getSession(booking.sessionId) : undefined
-  const status = sessionCancelled ? { label: "Session cancelled", className: statusStyles.cancelled.className } : unpaid ? { label: orderStatusLabels[order.status], className: statusStyles.pending.className } : statusStyles[stateStatus]
-  const when = booking.kind === "review" ? (stateStatus === "completed" ? "Delivered" : "Feedback due") : formatTime(booking.date, booking.timezone)
+  const status: { label: string; tone: BadgeTone } = sessionCancelled
+    ? { label: "Session cancelled", tone: "neutral" }
+    : unpaid
+      ? { label: orderStatusLabels[order.status], tone: orderTone[order.status] }
+      : { label: bookingStatusLabels[stateStatus], tone: bookingTone[stateStatus] }
+  const when = booking.kind === "review" ? (stateStatus === "completed" ? "Delivered" : "Feedback due") : formatTime(booking.date, timeZone)
   const active = isActive(stateStatus)
+  const live = Boolean(now) && booking.kind !== "review" && stateStatus === "confirmed" && new Date(booking.date) <= now! && bookingEnd(booking) > now!.getTime()
+  const paymentNote = order && (order.status === "refund-pending" || order.status === "refunded" || order.status === "processing" || order.status === "payment-failed")
 
   const runPaymentAction = async (action: () => Promise<PaymentOutcome>, success: string) => {
     if (paymentBusy) return
@@ -81,74 +81,70 @@ export function BookingRow({ booking, person }: BookingRowProps) {
   }
 
   return (
-    <li className="p-4">
-      <div className="flex items-center gap-4">
-        <DateBlock iso={booking.date} timeZone={booking.timezone} className={cn(!active && "opacity-60")} />
+    <li className="py-4 first:pt-1 last:pb-1">
+      <div className="flex items-start gap-4">
+        <DateBlock iso={booking.date} timeZone={timeZone} className={cn(!active && "bg-muted text-muted-foreground")} />
         <div className="min-w-0 flex-1">
-          <p className={cn("truncate font-medium", stateStatus === "cancelled" && "line-through")}>
-            {person ? (
-              booking.title
-            ) : (
-              <Link href={bookingHref(booking)} className="hover:underline">
+          <div className="flex items-start justify-between gap-3">
+            <p className={cn("min-w-0 font-medium", stateStatus === "cancelled" && "text-muted-foreground line-through")}>
+              <Link href={bookingHref(booking)} className="rounded-sm hover:underline focus-ring">
                 {booking.title}
               </Link>
-            )}
-          </p>
-          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted-foreground">
-            <MentorAvatar name={counterpart.name} photo={counterpart.photo} className="size-5" />
-            <span>{counterpart.name}</span>
-            <span aria-hidden="true" className="hidden sm:inline">·</span>
-            <span className="basis-full sm:basis-auto">
-              {offerTypeLabels[booking.kind]} · {when}
+            </p>
+            <span className="shrink-0 text-sm font-medium tabular-nums">
+              {stateStatus === "cancelled" && !order && booking.refundPercent !== undefined ? `${booking.refundPercent}% refunded` : formatPrice(booking.total)}
             </span>
+          </div>
+          <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+            <MentorAvatar name={mentor.name} photo={mentor.photo} className="size-5" />
+            <span className="truncate">{mentor.name}</span>
           </p>
-          <span className={cn("mt-1.5 inline-block rounded-md px-2 py-0.5 text-xs font-medium sm:hidden", status.className)}>{status.label}</span>
-          {booking.sample && <SamplePill className="mt-1.5 ml-1.5 sm:hidden" />}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge tone={live ? "success" : status.tone}>{live ? "Live now" : status.label}</Badge>
+            {booking.sample && <SamplePill />}
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {offerTypeLabels[booking.kind]}, {when}
+            </span>
+          </div>
+
+          {paymentNote && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+              <Badge tone={orderTone[order.status]}>
+                {orderStatusLabels[order.status]}
+                {order.refundAmount !== undefined && ` ${formatPrice(order.refundAmount, order.quote.currency)}`}
+              </Badge>
+              {order.status === "refund-pending" && (
+                <Button variant="outline" size="sm" disabled={paymentBusy} onClick={() => runPaymentAction(() => settleDemoRefund(order.id), "Demo refund completed")}>
+                  Complete demo refund
+                </Button>
+              )}
+              {order.status === "processing" && (
+                <Button variant="outline" size="sm" disabled={paymentBusy} onClick={() => runPaymentAction(() => resetStalledPayment(order.id), "Payment reset — you can try paying again")}>
+                  Payment didn&apos;t finish? Reset
+                </Button>
+              )}
+              <p role="alert" className="basis-full text-destructive empty:hidden">
+                {paymentError}
+              </p>
+            </div>
+          )}
+          {groupSession && stateStatus === "confirmed" && (
+            <div className="mt-3">
+              <MeetingCard session={groupSession} bookings={bookings} />
+            </div>
+          )}
+          {(now && active) || stateStatus === "completed" ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {now && active && <BookingActions booking={booking} order={order} now={now} />}
+              {stateStatus === "completed" && (
+                <Link href={`/mentors/${mentor.slug}`} className="rounded-sm text-sm font-medium text-primary hover:underline focus-ring">
+                  Book again
+                </Link>
+              )}
+            </div>
+          ) : null}
         </div>
-        <div className="hidden shrink-0 flex-col items-end gap-1.5 sm:flex">
-          <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", status.className)}>{status.label}</span>
-          {booking.sample && <SamplePill />}
-          <span className="text-sm text-muted-foreground">
-            {stateStatus === "cancelled" && !order && booking.refundPercent !== undefined ? `${booking.refundPercent}% refunded` : formatPrice(booking.total)}
-          </span>
-        </div>
-        {stateStatus === "completed" && !person && (
-          <Link href={`/mentors/${mentor.slug}`} className="shrink-0 link text-sm">
-            Book again
-          </Link>
-        )}
       </div>
-      {order && !person && (order.status === "refund-pending" || order.status === "refunded" || order.status === "processing" || order.status === "payment-failed") && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm sm:pl-18">
-          <span className={cn("font-medium", paymentTone[order.status])}>
-            {orderStatusLabels[order.status]}
-            {order.refundAmount !== undefined && ` · ${formatPrice(order.refundAmount, order.quote.currency)}`}
-          </span>
-          {order.status === "refund-pending" && (
-            <Button variant="outline" size="sm" disabled={paymentBusy} onClick={() => runPaymentAction(() => settleDemoRefund(order.id), "Demo refund completed")}>
-              Complete demo refund
-            </Button>
-          )}
-          {order.status === "processing" && (
-            <Button variant="outline" size="sm" disabled={paymentBusy} onClick={() => runPaymentAction(() => resetStalledPayment(order.id), "Payment reset — you can try paying again")}>
-              Payment didn&apos;t finish? Reset
-            </Button>
-          )}
-          <p role="alert" className="basis-full text-destructive empty:hidden">
-            {paymentError}
-          </p>
-        </div>
-      )}
-      {groupSession && !person && stateStatus === "confirmed" && (
-        <div className="mt-3 sm:pl-18">
-          <MeetingCard session={groupSession} bookings={bookings} />
-        </div>
-      )}
-      {now && !person && active && (
-        <div className="mt-3 sm:pl-18">
-          <BookingActions booking={booking} order={order} now={now} />
-        </div>
-      )}
     </li>
   )
 }

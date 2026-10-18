@@ -136,7 +136,7 @@ test.describe("enrolling", () => {
 
   test("enrolled sessions appear in the learner dashboard", async ({ page }) => {
     await enroll(page, "sql-analytics-interview-prep")
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/bookings")
     const row = page.locator("section[aria-labelledby=bookings] li").filter({ hasText: "SQL & Analytics Interview Prep" })
     await expect(row).toContainText("Confirmed")
     await expect(row.getByRole("link", { name: "SQL & Analytics Interview Prep" })).toBeVisible()
@@ -169,7 +169,7 @@ test.describe("attendee-only meeting details", () => {
     await page.goto("/sessions")
     await page.getByRole("switch", { name: "Show past sessions" }).click()
     await expect(card(page, "Finding Funded Master")).toContainText("Attended")
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/bookings")
     await page.getByRole("tab", { name: /Past/ }).click()
     await expect(page.locator("section[aria-labelledby=bookings] li").filter({ hasText: "Finding Funded Master" })).toContainText("Completed")
   })
@@ -179,10 +179,12 @@ test.describe("cancelling a session", () => {
   test("refunds enrolled learners in full and closes enrollment", async ({ page }) => {
     await signedIn(page, { role: "mentor" })
     await enroll(page, "system-design-essentials")
-    await page.goto("/dashboard/mentor")
-    await page.getByRole("button", { name: "Cancel session" }).first().click()
-    await page.getByRole("dialog").getByRole("button", { name: "Cancel for everyone" }).click()
-    await expect(page.getByText("Cancelled").first()).toBeVisible()
+    await page.goto("/dashboard/mentor/bookings")
+    await page.getByRole("tab", { name: /Group sessions/ }).click()
+    const sessionRow = page.getByRole("tabpanel", { name: /Group sessions/ }).getByRole("listitem").filter({ hasText: "System Design Essentials" })
+    await sessionRow.getByRole("button", { name: "Cancel session" }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Cancel for everyone" }).click()
+    await expect(sessionRow).toContainText("Cancelled")
 
     const state = await stored(page)
     expect(state.orders[0].status).toBe("refunded")
@@ -195,7 +197,7 @@ test.describe("cancelling a session", () => {
 
     // The learner dashboard is learner-only, so switch the simulated session back before opening it.
     await page.evaluate(() => localStorage.setItem("mentorbridge:session", JSON.stringify({ email: "rafi@example.com", role: "learner" })))
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/bookings")
     await page.getByRole("tab", { name: /Past/ }).click()
     const row = page.locator("section[aria-labelledby=bookings] li").filter({ hasText: "System Design Essentials" })
     await expect(row).toContainText("Session cancelled")

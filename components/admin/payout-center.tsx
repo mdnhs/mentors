@@ -3,7 +3,8 @@
 import { BanknoteIcon, CheckIcon } from "lucide-react"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, MetricCard, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { CopyId, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { PageHeader, Stat, StatStrip } from "@/components/portal/ui"
 import { useAdminSource } from "@/components/admin/use-admin"
 import { ConfirmAction } from "@/components/site/confirm-action"
 import { Button } from "@/components/ui/button"
@@ -27,7 +28,7 @@ export function PayoutCenter() {
   const settle = (row: AdminPayoutRow) => notify(adminSettlePayout(principal, row.payout.id), `${row.payout.id} marked paid. No real transfer was made.`)
 
   const payoutColumns: Column<AdminPayoutRow>[] = [
-    { id: "id", header: "Payout", sortValue: (row) => row.payout.id, cell: (row) => <span className="font-medium">{row.payout.id}</span> },
+    { id: "id", header: "Payout", sortValue: (row) => row.payout.id, cell: (row) => <CopyId value={row.payout.id} className="font-medium" /> },
     { id: "mentor", header: "Mentor", sortValue: (row) => row.mentor?.name ?? row.payout.mentorSlug, cell: (row) => <span className="text-muted-foreground">{row.mentor?.name ?? row.payout.mentorSlug}</span> },
     { id: "amount", header: "Amount", align: "right", sortValue: (row) => row.payout.amount, cell: (row) => <span className="tabular-nums">{formatPrice(row.payout.amount, row.payout.currency)}</span> },
     {
@@ -66,7 +67,7 @@ export function PayoutCenter() {
                 <dd className="font-medium text-foreground tabular-nums">{formatPrice(row.payout.amount, row.payout.currency)}</dd>
                 <dt>Requested</dt>
                 <dd className="text-foreground">{formatDate(row.payout.requestedAt)}</dd>
-                <dd className="col-span-2 mt-1 text-xs">Payouts are only paid from earnings on completed sessions, and a paid payout can&apos;t be reopened. This records a demo state change — no transfer is made.</dd>
+                <dd className="col-span-2 mt-1 text-xs">A paid payout can&apos;t be reopened. Demo only — no transfer is made.</dd>
               </dl>
             }
             confirmLabel="Mark paid"
@@ -92,66 +93,59 @@ export function PayoutCenter() {
     { id: "completed", header: "Completed", align: "right", secondary: true, sortValue: (row) => row.summary.completedBookings, cell: (row) => <span className="tabular-nums">{row.summary.completedBookings}</span> },
   ]
 
+  const pendingCount = payouts.filter((row) => row.payout.status === "pending").length
+
   return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Mentor payouts" description="Payout requests across the marketplace and the balances behind them, derived from order transactions." />
-      <DemoNotice>Marking a payout paid only records a state change here. There is no transfer, no bank detail and no provider in this demo.</DemoNotice>
+    <div>
+      <PageHeader title="Mentor payouts" description="Payout requests and the balances behind them." />
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MetricCard label="Pending payouts" value={formatPrice(pendingTotal)} detail="Requested, not yet marked paid." tone="accent" />
-        <MetricCard label="Paid out" value={formatPrice(paidTotal)} detail="Marked paid in this demo." />
-        <MetricCard label="Accrued mentor earnings" value={formatPrice(accrued)} detail="Mentors' share of kept value, before payouts." />
+      <StatStrip label="Payout summary" className="mb-6">
+        <Stat label="Pending payouts" value={formatPrice(pendingTotal)} hint={`${pendingCount} ${pendingCount === 1 ? "request" : "requests"}`} />
+        <Stat label="Paid out" value={formatPrice(paidTotal)} hint="Marked paid" />
+        <Stat label="Accrued mentor earnings" value={now ? formatPrice(accrued) : "—"} hint="Before payouts" />
+      </StatStrip>
+
+      <div className="space-y-6">
+        <DataTable
+          title="Payout records"
+          anchor="payout-table"
+          rows={payouts}
+          columns={payoutColumns}
+          rowKey={(row) => row.payout.id}
+          urlKey="payouts"
+          exportFilename="payouts"
+          search={(row) => `${row.payout.id} ${row.mentor?.name ?? row.payout.mentorSlug}`}
+          searchPlaceholder="Search payout or mentor…"
+          searchLabel="Search payouts"
+          empty="No payouts have been requested."
+          filters={[
+            {
+              id: "status",
+              label: "Status",
+              options: [
+                { id: "pending", label: "Pending", match: (row) => row.payout.status === "pending" },
+                { id: "paid", label: "Paid", match: (row) => row.payout.status === "paid" },
+              ],
+            },
+          ]}
+        />
+
+        <DataTable
+          title="Mentor balances"
+          anchor="finance-table"
+          rows={finance}
+          columns={financeColumns}
+          rowKey={(row) => row.slug}
+          urlKey="balances"
+          exportFilename="mentor-balances"
+          loading={!now}
+          search={(row) => `${row.mentor?.name ?? row.slug} ${row.slug}`}
+          searchPlaceholder="Search mentor…"
+          searchLabel="Search mentor balances"
+          empty="No orders yet."
+          initialSort={{ columnId: "earned", direction: "desc" }}
+        />
       </div>
-
-      <section aria-labelledby="payout-table">
-        <h2 id="payout-table" className="text-subheading">
-          Payout records
-        </h2>
-        <div className="mt-3">
-          <DataTable
-            rows={payouts}
-            columns={payoutColumns}
-            rowKey={(row) => row.payout.id}
-            urlKey="payouts"
-            exportFilename="payouts"
-            search={(row) => `${row.payout.id} ${row.mentor?.name ?? row.payout.mentorSlug}`}
-            searchPlaceholder="Search payout or mentor…"
-            searchLabel="Search payouts"
-            empty="No payouts have been requested."
-            filters={[
-              {
-                id: "status",
-                label: "Status",
-                options: [
-                  { id: "pending", label: "Pending", match: (row) => row.payout.status === "pending" },
-                  { id: "paid", label: "Paid", match: (row) => row.payout.status === "paid" },
-                ],
-              },
-            ]}
-          />
-        </div>
-      </section>
-
-      <section aria-labelledby="finance-table">
-        <h2 id="finance-table" className="text-subheading">
-          Mentor balances
-        </h2>
-        <div className="mt-3">
-          <DataTable
-            rows={finance}
-            columns={financeColumns}
-            rowKey={(row) => row.slug}
-            urlKey="balances"
-            exportFilename="mentor-balances"
-            loading={!now}
-            search={(row) => `${row.mentor?.name ?? row.slug} ${row.slug}`}
-            searchPlaceholder="Search mentor…"
-            searchLabel="Search mentor balances"
-            empty="No orders yet."
-            initialSort={{ columnId: "earned", direction: "desc" }}
-          />
-        </div>
-      </section>
     </div>
   )
 }

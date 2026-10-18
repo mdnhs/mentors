@@ -1,8 +1,7 @@
 import type { Metadata } from "next"
 
 import { RequireRole } from "@/components/auth/require-role"
-import { MentorShell } from "@/components/mentor/mentor-shell"
-import { Container } from "@/components/site/container"
+import { UnsavedChangesDialog } from "@/components/mentor/unsaved-guard"
 
 export const metadata: Metadata = {
   title: "Mentor workspace",
@@ -13,10 +12,9 @@ export const instant = false
 
 export default function MentorLayout({ children }: LayoutProps<"/dashboard/mentor">) {
   return (
-    <Container className="max-w-5xl pt-8 pb-16 sm:pt-12 sm:pb-24">
-      <RequireRole role="mentor">
-        <MentorShell>{children}</MentorShell>
-      </RequireRole>
-    </Container>
+    <RequireRole role="mentor">
+      {children}
+      <UnsavedChangesDialog />
+    </RequireRole>
   )
 }

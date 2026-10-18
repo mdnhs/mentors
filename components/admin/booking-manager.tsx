@@ -4,8 +4,9 @@ import { XCircleIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { CopyId, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
+import { PageHeader, Stat, StatStrip } from "@/components/portal/ui"
 import { ConfirmAction } from "@/components/site/confirm-action"
 import { Button } from "@/components/ui/button"
 import { adminCancelBooking } from "@/lib/admin-client"
@@ -25,6 +26,9 @@ export function BookingManager() {
   const rows = adminBookingRows(source)
   const statusOf = (row: AdminBookingRow) => (now ? effectiveStatus(row.booking, now) : row.booking.status)
 
+  const isActiveStatus = (row: AdminBookingRow) => ["pending", "confirmed", "in-review"].includes(statusOf(row))
+  const count = (kind: "active" | "completed" | "cancelled" | "expired") => rows.filter((row) => (kind === "active" ? isActiveStatus(row) : statusOf(row) === kind)).length
+
   const cancel = async (row: AdminBookingRow) => {
     const result = await adminCancelBooking(principal, row.booking.id, row.scope === "other" ? "incoming" : "learner")
     if (result.ok) toast.success(`${row.booking.id}: ${result.message}`)
@@ -39,9 +43,8 @@ export function BookingManager() {
       cell: (row) => (
         <div>
           <p className="font-medium">{row.booking.title}</p>
-          <p className="text-xs text-muted-foreground">
-            {row.booking.id} · {getMentor(row.booking.mentorSlug)?.name ?? row.booking.mentorSlug}
-          </p>
+          <p className="text-xs text-muted-foreground">{getMentor(row.booking.mentorSlug)?.name ?? row.booking.mentorSlug}</p>
+          <CopyId value={row.booking.id} className="text-muted-foreground" />
         </div>
       ),
     },
@@ -73,7 +76,7 @@ export function BookingManager() {
       header: "Payment",
       secondary: true,
       sortValue: (row) => row.order?.status ?? "none",
-      cell: (row) => <span className="text-muted-foreground">{row.order ? orderStatusLabels[row.order.status] : "No order"}</span>,
+      cell: (row) => (row.order ? <StatusBadge tone={moderationTone(row.order.status)}>{orderStatusLabels[row.order.status]}</StatusBadge> : <span className="text-muted-foreground">No order</span>),
     },
     {
       id: "total",
@@ -125,9 +128,15 @@ export function BookingManager() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Booking management" description="Every booking in the marketplace, with the order behind it. Cancelling applies the booking's refund policy." />
-      <DemoNotice>Refunds are demo refunds — no money moves. The learner is refunded by the policy in the booking record; a mentor cancellation refunds in full.</DemoNotice>
+    <div>
+      <PageHeader title="Booking management" description="Every booking, with the order behind it." />
+
+      <StatStrip label="Bookings by status" className="mb-6">
+        <Stat label="Active" value={now ? count("active") : "—"} hint="Pending or confirmed" />
+        <Stat label="Completed" value={now ? count("completed") : "—"} />
+        <Stat label="Cancelled" value={now ? count("cancelled") : "—"} />
+        <Stat label="Expired holds" value={now ? count("expired") : "—"} />
+      </StatStrip>
 
       <DataTable
         rows={rows}
@@ -145,7 +154,7 @@ export function BookingManager() {
             id: "status",
             label: "Status",
             options: [
-              { id: "active", label: "Active", match: (row) => ["pending", "confirmed", "in-review"].includes(statusOf(row)) },
+              { id: "active", label: "Active", match: isActiveStatus },
               { id: "completed", label: "Completed", match: (row) => statusOf(row) === "completed" },
               { id: "cancelled", label: "Cancelled", match: (row) => statusOf(row) === "cancelled" },
               { id: "expired", label: "Expired", match: (row) => statusOf(row) === "expired" },

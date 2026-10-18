@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { ArrowRightIcon } from "lucide-react"
 
 import { homeFor, useAuth } from "@/lib/auth"
 
@@ -17,10 +18,11 @@ export function WorkspaceLink() {
   const { role } = auth.session
 
   return (
-    <p className="mt-12 text-sm text-muted-foreground">
-      {role === "learner" ? "Want to share what you know?" : workspaces[role].question}{" "}
-      <Link href={role === "learner" ? "/become-a-mentor" : homeFor(role)} className="link">
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-6 text-sm text-muted-foreground">
+      {role === "learner" ? "Want to share what you know?" : workspaces[role].question}
+      <Link href={role === "learner" ? "/become-a-mentor" : homeFor(role)} className="inline-flex items-center gap-1 rounded-sm font-medium text-primary hover:underline focus-ring">
         {role === "learner" ? "Apply to become a mentor" : workspaces[role].label}
+        <ArrowRightIcon className="size-3.5" aria-hidden="true" />
       </Link>
     </p>
   )

@@ -6,22 +6,24 @@ const STORAGE_KEY = "mentorbridge:v1"
 
 test.use({ timezoneId: "Asia/Dhaka" })
 
+// 12:00 in Dhaka, so the overview greets with "Good afternoon".
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-18T06:00:00Z"))
 })
 
 const stored = (page: Page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), STORAGE_KEY)
 const section = (page: Page, id: string) => page.locator(`section[aria-labelledby="${id}"]`)
+const main = (page: Page) => page.getByRole("main")
 
 async function startFresh(page: Page) {
-  await page.goto("/dashboard")
-  await page.getByRole("button", { name: "Clear sample data" }).first().click()
-  await expect(page.getByText("No sessions booked yet")).toBeVisible()
+  await page.goto("/dashboard/bookings")
+  await main(page).getByRole("button", { name: "Clear sample data" }).click()
+  await expect(page.getByText("Nothing coming up")).toBeVisible()
 }
 
 test.describe("access", () => {
   test("a signed-out visitor sees a login prompt instead of any personal data", async ({ page }) => {
-    for (const path of ["/dashboard", "/dashboard/settings", "/dashboard/bookings/bk-1001"]) {
+    for (const path of ["/dashboard", "/dashboard/bookings", "/dashboard/saved", "/dashboard/settings", "/dashboard/bookings/bk-1001"]) {
       await page.goto(path)
       await expect(page.getByRole("heading", { name: "Log in to see your sessions" })).toBeVisible()
       await expect(page.getByText("System design mock interview")).toHaveCount(0)
@@ -31,12 +33,12 @@ test.describe("access", () => {
 
   test("logging in returns to the page that asked for it, and logging out locks it again", async ({ page, isMobile }) => {
     await page.goto("/dashboard/settings")
-    await page.getByRole("main").getByRole("link", { name: "Log in" }).click()
+    await main(page).getByRole("link", { name: "Log in" }).click()
     await expect(page).toHaveURL(/\/login\?next=%2Fdashboard%2Fsettings/)
     await page.getByLabel("Password").fill("demo1234")
     await page.getByRole("button", { name: "Log in" }).click()
     await expect(page).toHaveURL(/\/dashboard\/settings$/)
-    await expect(page.getByRole("main").getByRole("heading", { name: "Account" })).toBeVisible()
+    await expect(main(page).getByRole("heading", { name: "Profile" })).toBeVisible()
 
     if (isMobile) {
       await page.getByRole("button", { name: "Open menu" }).click()
@@ -64,7 +66,7 @@ test.describe("access", () => {
     await page.getByLabel("Password").locator("visible=true").fill("demo1234")
     await page.getByRole("button", { name: "Create account" }).click()
     await expect(page).toHaveURL(/\/dashboard$/)
-    await expect(page.getByRole("heading", { name: "Hi, Mina" })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1, name: "Good afternoon, Mina" })).toBeVisible()
   })
 
   test("the password can be shown, and a forgotten one leads to a demo reset", async ({ page }) => {
@@ -96,79 +98,163 @@ test.describe("access", () => {
     await signedIn(page)
     await page.goto("/dashboard/bookings/not-mine")
     await expect(page.getByRole("heading", { name: "We couldn't find that booking" })).toBeVisible()
+    await expect(main(page).getByRole("link", { name: "Back to bookings" })).toHaveAttribute("href", "/dashboard/bookings")
   })
 })
 
 test.describe("demo mode", () => {
   test.beforeEach(async ({ page }) => signedIn(page))
 
-  test("says it is a demo and marks sample records instead of passing them off as real", async ({ page }) => {
-    await page.goto("/dashboard")
-    await expect(page.getByRole("note")).toContainText("Demo account")
-    await expect(page.getByRole("note")).toContainText("made-up examples")
-    const row = page.locator("li").filter({ hasText: "System design mock interview" })
+  test("the top bar says it is a demo, and sample records are marked instead of passed off as real", async ({ page }) => {
+    await page.goto("/dashboard/bookings")
+    await expect(page.getByRole("button", { name: "Demo data", exact: true })).toBeVisible()
+    await expect(page.getByText("Demo account")).toHaveCount(0)
+    const row = section(page, "bookings").locator("li").filter({ hasText: "System design mock interview" })
     await expect(row).toContainText("Sample")
+    await page.goto("/dashboard")
+    await expect(section(page, "next-session")).toContainText("Sample")
   })
 
   test("clearing sample data leaves honest empty states everywhere", async ({ page }) => {
     await startFresh(page)
-    await expect(page.getByText("Nothing coming up.")).toBeVisible()
-    await expect(page.getByRole("heading", { name: "No saved mentors" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "No notes yet" })).toBeVisible()
-    await expect(page.getByText("Payments, confirmations and refunds will show here.")).toBeVisible()
-    await expect(page.getByText("You're all caught up")).toBeVisible()
-    await expect(page.getByText("Popular mentors to start with.")).toBeVisible()
-    await expect(section(page, "guidance-heading").getByRole("listitem")).toHaveCount(3)
+    await expect(main(page).getByRole("button", { name: "Clear sample data" })).toHaveCount(0)
+
+    await page.goto("/dashboard")
+    await expect(page.getByText("No sessions booked yet")).toBeVisible()
+    await expect(section(page, "up-next-heading")).toContainText("You're all caught up")
+    await expect(section(page, "activity-heading")).toContainText("No payments yet")
+    await expect(page.getByRole("list", { name: "Next seven days" }).getByRole("link")).toHaveCount(0)
+    await expect(section(page, "picks-heading").getByRole("listitem").first()).toBeVisible()
+
+    await page.goto("/dashboard/saved")
+    await expect(page.getByRole("heading", { name: "No saved mentors" })).toBeVisible()
+    await expect(main(page).getByText("Save mentors you like to compare them later.")).toBeVisible()
   })
 })
 
-test.describe("dashboard", () => {
+test.describe("overview", () => {
   test.beforeEach(async ({ page }) => signedIn(page))
 
-  test("answers: next session, what to do next, and where to find guidance", async ({ page }) => {
+  test("leads with the next session, in the learner's time zone", async ({ page }) => {
     await page.goto("/dashboard")
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Good afternoon, Rafi")
     const next = section(page, "next-session")
     await expect(next).toContainText("Next session")
     await expect(next).toContainText("System design mock interview")
-    await expect(next.getByRole("link", { name: "View details" })).toBeVisible()
-
-    const steps = section(page, "next-steps")
-    await expect(steps).toContainText("open steps from PhD application strategy")
-
-    await expect(section(page, "guidance-heading")).toContainText("Find more guidance")
-    await expect(section(page, "guidance-heading").getByRole("listitem").first()).toBeVisible()
+    await expect(next).toContainText("in 4 days")
+    await expect(next).toContainText("Thu, Oct 22, 7:00 PM Dhaka time")
+    await next.getByRole("link", { name: "View details" }).click()
+    await expect(page).toHaveURL(/\/dashboard\/bookings\/bk-1001$/)
   })
 
-  test("quick actions lead to discovery, live sessions and settings", async ({ page }) => {
+  test("the week strip shows this week's sessions and links to them", async ({ page }) => {
     await page.goto("/dashboard")
-    const quick = page.getByRole("navigation", { name: "Quick actions" })
-    await expect(quick.getByRole("link", { name: "Find a mentor" })).toHaveAttribute("href", "/mentors")
-    await expect(quick.getByRole("link", { name: "Live sessions" })).toHaveAttribute("href", "/sessions")
-    await quick.getByRole("link", { name: "Settings" }).click()
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible()
+    const week = page.getByRole("list", { name: "Next seven days" })
+    await expect(week.getByRole("link")).toHaveCount(1)
+    await week.getByRole("link", { name: /System design mock interview/ }).click()
+    await expect(page).toHaveURL(/\/dashboard\/bookings\/bk-1001$/)
+  })
+
+  test("the stats count what matters and lead to their pages", async ({ page }) => {
+    await page.goto("/dashboard")
+    const stats = page.getByRole("main").locator("dl[aria-label='Your progress']")
+    await expect(stats).toContainText("Upcoming sessions2")
+    await expect(stats).toContainText("Completed sessions2")
+    await expect(stats).toContainText("Open action steps3")
+    await expect(stats.getByRole("link", { name: /Saved mentors/ })).toHaveAttribute("href", "/dashboard/saved")
+    await expect(stats.getByRole("link", { name: /Upcoming sessions/ })).toHaveAttribute("href", "/dashboard/bookings")
+  })
+
+  test("an open step can be ticked off from the overview, and undone", async ({ page }) => {
+    await page.goto("/dashboard")
+    const upNext = section(page, "up-next-heading")
+    await expect(upNext).toContainText("PhD application strategy")
+    await upNext.getByLabel("Draft a one-page research statement").click()
+    await expect(page.getByText("Step done")).toBeVisible()
+    await expect(upNext.getByLabel("Draft a one-page research statement")).toHaveCount(0)
+    expect((await stored(page)).notes["bk-0994"].actions.find((item: { id: string }) => item.id === "a2").done).toBe(true)
+    await page.getByRole("button", { name: "Undo" }).click()
+    await expect(upNext.getByLabel("Draft a one-page research statement")).toBeVisible()
+  })
+
+  test("recent activity and mentor suggestions are shown", async ({ page }) => {
+    await page.goto("/dashboard")
+    await expect(section(page, "activity-heading")).toContainText("Recent activity")
+    await expect(section(page, "picks-heading")).toContainText("Mentors for you")
+    await expect(section(page, "picks-heading").getByRole("listitem").first()).toBeVisible()
+  })
+
+  test("header actions lead to discovery and live sessions", async ({ page }) => {
+    await page.goto("/dashboard")
+    await expect(main(page).getByRole("link", { name: "Find a mentor" })).toHaveAttribute("href", "/mentors")
+    await expect(main(page).getByRole("link", { name: "Group sessions" })).toHaveAttribute("href", "/sessions")
+  })
+})
+
+test.describe("bookings", () => {
+  test.beforeEach(async ({ page }) => signedIn(page))
+
+  test("upcoming and past are separate tabs with counts", async ({ page }) => {
+    await page.goto("/dashboard/bookings")
+    await expect(page.getByRole("heading", { level: 1, name: "Bookings" })).toBeVisible()
+    const upcoming = page.getByRole("tab", { name: /Upcoming/ })
+    await expect(upcoming).toContainText("2")
+    await expect(upcoming).toHaveAttribute("aria-selected", "true")
+    const list = section(page, "bookings")
+    await expect(list.locator("li").filter({ hasText: "System design mock interview" })).toContainText("Confirmed")
+    await expect(list.getByRole("button", { name: "Cancel session" }).first()).toBeVisible()
+
+    await page.getByRole("tab", { name: /Past/ }).click()
+    await expect(page.getByRole("tab", { name: /Past/ })).toHaveAttribute("aria-selected", "true")
+    await expect(list.locator("li").filter({ hasText: "PhD application strategy" })).toContainText("Completed")
   })
 
   test("a booking opens its details with price, policy and allowed actions", async ({ page }) => {
-    await page.goto("/dashboard")
-    await page.locator("li").filter({ hasText: "System design mock interview" }).getByRole("link", { name: "System design mock interview" }).click()
+    await page.goto("/dashboard/bookings")
+    await section(page, "bookings").getByRole("link", { name: "System design mock interview" }).click()
     await expect(page).toHaveURL(/\/dashboard\/bookings\/bk-1001$/)
-    await expect(page.getByRole("heading", { name: "System design mock interview" })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1, name: "System design mock interview" })).toBeVisible()
+    await expect(main(page).getByRole("navigation", { name: /breadcrumb/i }).getByRole("link", { name: "Bookings" })).toHaveAttribute("href", "/dashboard/bookings")
     await expect(page.getByText(/Full refund up to 48 hours|Free cancellation/)).toBeVisible()
     await expect(page.getByRole("button", { name: "Cancel session" })).toBeVisible()
+    await expect(section(page, "details-heading")).toContainText("Dhaka time")
     await expect(page.getByText("Demo mode: payments are simulated")).toBeVisible()
   })
 
+  test("notes are summarised with progress and link to the full plan", async ({ page }) => {
+    await page.goto("/dashboard/bookings")
+    const overview = section(page, "notes-overview-heading")
+    await expect(overview).toContainText("PhD application strategy")
+    await expect(overview).toContainText("1 of 3 done")
+    await expect(overview.getByRole("progressbar", { name: "PhD application strategy steps done" })).toHaveAttribute("aria-valuenow", "1")
+    await overview.getByRole("link", { name: /PhD application strategy/ }).click()
+    await expect(page).toHaveURL(/\/dashboard\/bookings\/bk-0994#notes$/)
+  })
+})
+
+test.describe("saved mentors", () => {
+  test.beforeEach(async ({ page }) => signedIn(page))
+
   test("saving and unsaving a mentor updates the saved list", async ({ page }) => {
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/saved")
+    await expect(page.getByRole("heading", { level: 1, name: "Saved mentors" })).toBeVisible()
     const saved = section(page, "saved")
     await expect(saved).toContainText("Nusrat Jahan")
+    await expect(saved).toContainText("From ৳")
     await saved.getByRole("button", { name: "Save Nusrat Jahan" }).click()
+    await expect(page.getByText("Removed Nusrat Jahan from saved")).toBeVisible()
     await expect(saved).not.toContainText("Nusrat Jahan")
     expect((await stored(page)).saved).not.toContain("nusrat-jahan")
     await page.goto("/mentors/nusrat-jahan")
     await page.getByRole("button", { name: "Save Nusrat Jahan" }).click()
-    await page.goto("/dashboard")
+    await page.goto("/dashboard/saved")
     await expect(section(page, "saved")).toContainText("Nusrat Jahan")
+  })
+
+  test("suggests more mentors to look at", async ({ page }) => {
+    await page.goto("/dashboard/saved")
+    await expect(section(page, "recommended-heading").getByRole("listitem").first()).toBeVisible()
   })
 })
 
@@ -195,15 +281,6 @@ test.describe("notes and action plans", () => {
     await expect(page.locator("#notes")).toContainText("Only you can see these")
   })
 
-  test("the dashboard summarises notes and links to the full plan", async ({ page }) => {
-    await page.goto("/dashboard")
-    const overview = section(page, "notes-overview")
-    await expect(overview).toContainText("PhD application strategy")
-    await expect(overview).toContainText("2 of 3 steps open")
-    await overview.getByRole("link", { name: "PhD application strategy" }).click()
-    await expect(page).toHaveURL(/\/dashboard\/bookings\/bk-0994#notes$/)
-  })
-
   test("private notes never appear on the mentor dashboard", async ({ page }) => {
     await page.goto("/dashboard/bookings/bk-0994")
     await page.locator("#notes").getByLabel(/Your private notes/).fill("secret learner note")
@@ -218,6 +295,7 @@ test.describe("settings", () => {
 
   test("saves profile changes with validation, and the dashboard greets the new name", async ({ page }) => {
     await page.goto("/dashboard/settings")
+    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible()
     const save = page.getByRole("button", { name: "Save changes" })
     await expect(save).toBeDisabled()
     await page.getByLabel("Email").fill("not-an-email")
@@ -227,29 +305,41 @@ test.describe("settings", () => {
     await page.getByLabel("Full name").fill("Sara Khan")
     await save.click()
     await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
+    await expect(page.getByText("Profile saved")).toBeVisible()
     await page.goto("/dashboard")
-    await expect(page.getByRole("heading", { name: "Hi, Sara" })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1, name: "Good afternoon, Sara" })).toBeVisible()
   })
 
   test("dashboard activity switches persist and say they only change the dashboard", async ({ page }) => {
     await page.goto("/dashboard/settings")
     await expect(page.getByRole("heading", { name: "Dashboard activity" })).toBeVisible()
-    await expect(page.getByText("These don't send emails or notifications.")).toBeVisible()
+    await expect(page.getByText("Nothing is emailed or sent.")).toBeVisible()
     const updates = page.getByRole("switch", { name: "Mentor updates" })
     await expect(updates).toBeChecked()
     await updates.click()
+    await expect(page.getByText("Mentor updates off")).toBeVisible()
     await page.reload()
     await expect(page.getByRole("switch", { name: "Mentor updates" })).not.toBeChecked()
     expect((await stored(page)).notifications.mentorActivity).toBe(false)
   })
 
-  test("the timezone picker is labelled and offers the common zones", async ({ page }) => {
+  test("turning recent activity off hides it from the overview", async ({ page }) => {
+    await page.goto("/dashboard/settings")
+    await page.getByRole("switch", { name: "Recent activity" }).click()
+    await page.goto("/dashboard")
+    await expect(section(page, "up-next-heading")).toBeVisible()
+    await expect(section(page, "activity-heading")).toHaveCount(0)
+  })
+
+  test("the timezone picker is labelled, saves on change, and times follow it", async ({ page }) => {
     await page.goto("/dashboard/settings")
     const zone = page.getByLabel("Timezone")
     await expect(zone).toHaveValue("Asia/Dhaka")
     await zone.selectOption("Europe/London")
-    await page.getByRole("button", { name: "Save changes" }).click()
+    await expect(page.getByText("Times now show in London time")).toBeVisible()
     expect((await stored(page)).profile.timezone).toBe("Europe/London")
+    await page.goto("/dashboard")
+    await expect(section(page, "next-session")).toContainText("2:00 PM London time")
   })
 
   test("resetting demo data asks first, and can be backed out of", async ({ page }) => {
@@ -262,23 +352,26 @@ test.describe("settings", () => {
     await dialog.getByRole("button", { name: "Keep my data" }).click()
     expect((await stored(page)).profile.name).toBe("Sara Khan")
 
-    await page.getByRole("main").getByRole("button", { name: "Reset demo data" }).click()
+    await main(page).getByRole("button", { name: "Reset demo data" }).click()
     await page.getByRole("alertdialog").getByRole("button", { name: "Reset demo data" }).click()
     await expect(page.getByText("Demo data reset")).toBeVisible()
     expect((await stored(page)).profile.name).not.toBe("Sara Khan")
   })
 
   test("clearing sample data can be undone from the toast", async ({ page }) => {
-    await page.goto("/dashboard")
-    await page.getByRole("button", { name: "Clear sample data" }).first().click()
-    await expect(page.getByText("No sessions booked yet")).toBeVisible()
+    await page.goto("/dashboard/settings")
+    await main(page).getByRole("button", { name: "Clear sample data" }).click()
+    await expect(page.getByText("No sample records left.")).toBeVisible()
     await page.getByRole("button", { name: "Undo" }).click()
+    await expect(main(page).getByRole("button", { name: "Clear sample data" })).toBeVisible()
+    await page.goto("/dashboard")
     await expect(section(page, "next-session")).toContainText("System design mock interview")
   })
 
   test("logging out from settings confirms it", async ({ page }) => {
     await page.goto("/dashboard/settings")
-    await page.getByRole("main").getByRole("button", { name: "Log out" }).click()
+    await expect(main(page)).toContainText("rafi@example.com")
+    await main(page).getByRole("button", { name: "Log out" }).click()
     await expect(page).toHaveURL(/\/login$/)
     await expect(page.getByText("Logged out")).toBeVisible()
   })
@@ -287,21 +380,26 @@ test.describe("settings", () => {
 test.describe("layout", () => {
   test.beforeEach(async ({ page }) => signedIn(page))
 
-  test("dashboard, details and settings fit the screen with no sideways scrolling", async ({ page }) => {
-    for (const path of ["/dashboard", "/dashboard/bookings/bk-0994", "/dashboard/settings"]) {
+  test("every learner page fits the screen with no sideways scrolling", async ({ page }) => {
+    for (const path of ["/dashboard", "/dashboard/bookings", "/dashboard/saved", "/dashboard/bookings/bk-0994", "/dashboard/settings"]) {
       await page.goto(path)
-      await expect(page.getByRole("heading").first()).toBeVisible()
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
       expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), path).toBe(false)
     }
   })
 
-  test("on phones the next session comes before the bookings list", async ({ page, isMobile }) => {
+  test("on phones the next session comes first, and booking actions come before details", async ({ page, isMobile }) => {
     test.skip(!isMobile, "mobile only")
     await page.goto("/dashboard")
     const next = await section(page, "next-session").boundingBox()
-    const bookings = await section(page, "bookings").boundingBox()
-    expect(next!.y).toBeLessThan(bookings!.y)
-    const tap = await page.getByRole("navigation", { name: "Quick actions" }).getByRole("link", { name: "Find a mentor" }).boundingBox()
+    const week = await section(page, "week-heading").boundingBox()
+    expect(next!.y).toBeLessThan(week!.y)
+    const tap = await main(page).getByRole("link", { name: "Find a mentor" }).boundingBox()
     expect(tap!.height).toBeGreaterThanOrEqual(40)
+
+    await page.goto("/dashboard/bookings/bk-1001")
+    const status = await section(page, "status-heading").boundingBox()
+    const details = await section(page, "details-heading").boundingBox()
+    expect(status!.y).toBeLessThan(details!.y)
   })
 })

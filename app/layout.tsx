@@ -2,8 +2,6 @@ import type { Metadata, Viewport } from "next"
 import { Hind_Siliguri } from "next/font/google"
 import localFont from "next/font/local"
 
-import { SiteFooter } from "@/components/site/site-footer"
-import { SiteHeader } from "@/components/site/site-header"
 import { ThemeProvider } from "@/components/site/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { site } from "@/lib/site"
@@ -62,11 +60,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           Skip to content
         </a>
         <ThemeProvider>
-          <SiteHeader />
-          <main id="main" className="flex-1">
-            {children}
-          </main>
-          <SiteFooter />
+          {children}
           <Toaster position="bottom-center" closeButton />
         </ThemeProvider>
       </body>

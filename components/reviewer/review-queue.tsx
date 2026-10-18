@@ -1,79 +1,157 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
-import { InboxIcon } from "lucide-react"
+import { useSearchParams } from "next/navigation"
+import { Suspense } from "react"
+import { ClockIcon, InboxIcon } from "lucide-react"
 
-import { DemoNotice } from "@/components/admin/parts"
 import { SamplePill } from "@/components/dashboard/booking-row"
+import { MentorAvatar } from "@/components/mentors/mentor-avatar"
+import { PageHeader, Panel, PortalEmpty, Stat, StatStrip } from "@/components/portal/ui"
 import { ApplicationStatusBadge } from "@/components/reviewer/status-badge"
-import { EmptyState } from "@/components/site/empty-state"
-import { Chip } from "@/components/filters/chip"
+import { buttonVariants } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { usePrincipal } from "@/lib/auth"
 import { getCategory } from "@/lib/categories"
-import { formatDate } from "@/lib/format"
-import { visibleTo, type ApplicationStatus } from "@/lib/mentor-application"
-import { useAppState } from "@/lib/store"
+import { visibleTo, type Application } from "@/lib/mentor-application"
+import { ageOf, overdueCount, parseView, queueCounts, queueFor, reviewViews, type ReviewView } from "@/lib/review-insights"
+import { useAppState, useNow } from "@/lib/store"
+import { cn } from "@/lib/utils"
 
-const filters: { id: "open" | ApplicationStatus | "decided"; label: string }[] = [
-  { id: "open", label: "Needs attention" },
-  { id: "submitted", label: "Submitted" },
-  { id: "under-review", label: "Under review" },
-  { id: "info-required", label: "Waiting on applicant" },
-  { id: "decided", label: "Decided" },
-]
+type QueueProps = { basePath?: string; title?: string; description?: string }
 
-export function ReviewQueue({ basePath = "/dashboard/reviewer" }: { basePath?: string }) {
+export function ReviewQueue(props: QueueProps) {
+  // The active view lives in the URL, which a prerendered page only knows in the browser.
+  return (
+    <Suspense fallback={<Skeleton className="h-96 rounded-2xl" />}>
+      <Queue {...props} />
+    </Suspense>
+  )
+}
+
+function Queue({ basePath = "/dashboard/reviewer", title = "Applications", description = "Check new mentors before they go live." }: QueueProps) {
   const { applications } = useAppState()
   const principal = usePrincipal()
-  const [filter, setFilter] = useState<(typeof filters)[number]["id"]>("open")
+  const nowMs = useNow()
+  const view = parseView(useSearchParams().get("view"))
+  const now = nowMs === null ? null : new Date(nowMs)
   const queue = visibleTo(principal, applications)
-  const shown = queue
-    .filter((item) => (filter === "open" ? item.status === "submitted" || item.status === "under-review" : filter === "decided" ? item.status === "approved" || item.status === "rejected" : item.status === filter))
-    .sort((a, b) => (a.submittedAt ?? a.createdAt).localeCompare(b.submittedAt ?? b.createdAt))
+  const counts = now ? queueCounts(queue, now) : null
+  const overdue = now ? overdueCount(queue, now) : 0
+  const shown = queueFor(queue, view)
+  const hrefFor = (id: ReviewView) => (id === "open" ? basePath : `${basePath}?view=${id}`)
+  const viewLabel = reviewViews.find((item) => item.id === view)!.label
 
   return (
-    <div>
-      <h1 className="text-title">Application review</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{principal?.role === "admin" ? "Demo admin account" : "Demo reviewer account"} · {principal?.email}</p>
+    <>
+      <PageHeader title={title} description={description} />
 
-      <DemoNotice label="Demo review desk." className="mt-5">
-        Applicants marked Sample are made up, and their documents are placeholders. Evidence you open is logged to the audit trail.
-      </DemoNotice>
-
-      <div className="scrollbar-none -mx-4 mt-5 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label="Filter applications">
-        {filters.map((item) => (
-          <Chip key={item.id} active={filter === item.id} onClick={() => setFilter(item.id)}>
-            {item.label}
-          </Chip>
+      <StatStrip label="Queue summary">
+        {reviewViews.map((item) => (
+          <QueueStat
+            key={item.id}
+            label={item.label}
+            value={counts?.[item.id] ?? "–"}
+            href={hrefFor(item.id)}
+            active={view === item.id}
+            hint={item.id === "open" ? (overdue > 0 ? <span className="text-warning">{overdue} past 3 days</span> : "On time") : item.id === "decided" ? "Last 30 days" : undefined}
+          />
         ))}
+      </StatStrip>
+
+      <div role="group" aria-label="Filter applications" className="scrollbar-none -mx-4 mt-8 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <div className="inline-flex gap-1 rounded-xl border bg-card p-1">
+          {reviewViews.map((item) => (
+            <Link
+              key={item.id}
+              href={hrefFor(item.id)}
+              scroll={false}
+              aria-current={view === item.id ? "true" : undefined}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-sm whitespace-nowrap transition-colors focus-ring",
+                view === item.id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
       </div>
 
-      {shown.length > 0 ? (
-        <ul className="mt-5 divide-y surface">
-          {shown.map((item) => (
-            <li key={item.id} className="relative flex flex-wrap items-center gap-x-4 gap-y-1 p-4 transition hover:bg-muted/60 first:rounded-t-2xl last:rounded-b-2xl">
-              <div className="min-w-0 flex-1">
-                <Link href={`${basePath}/${item.id}`} className="font-medium outline-none after:absolute after:inset-0 focus-visible:after:ring-3 focus-visible:after:ring-ring/50">
-                  {item.data.basic.fullName}
-                </Link>
-                <p className="truncate text-sm text-muted-foreground">
-                  {item.data.background.role} · {item.data.expertise.categories.map((id) => getCategory(id).label).join(", ")}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {item.sample && <SamplePill />}
-                <ApplicationStatusBadge status={item.status} />
-              </div>
-              <time dateTime={item.submittedAt} className="w-24 text-right text-sm text-muted-foreground">
-                {item.submittedAt ? formatDate(item.submittedAt) : ""}
-              </time>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <EmptyState icon={InboxIcon} title="Nothing here" description="Applications that match this filter will appear here." className="mt-5" />
-      )}
+      <Panel title={viewLabel} className="mt-4" id="queue" action={<span className="text-sm text-muted-foreground tabular-nums">{shown.length}</span>} bodyClassName="px-2 pb-2">
+        {shown.length > 0 ? (
+          <ul aria-label={`${viewLabel} applications`} className="divide-y">
+            {shown.map((item) => (
+              <QueueRow key={item.id} application={item} href={`${basePath}/${item.id}`} now={now} />
+            ))}
+          </ul>
+        ) : view === "decided" ? (
+          <PortalEmpty icon={InboxIcon} title="No decisions yet" description="Approved and declined applications land here.">
+            <Link href={hrefFor("open")} className={buttonVariants({ variant: "outline" })}>
+              Back to the queue
+            </Link>
+          </PortalEmpty>
+        ) : (
+          <PortalEmpty icon={InboxIcon} title="Queue clear" description="Nothing is waiting in this view.">
+            <Link href={hrefFor("decided")} className={buttonVariants({ variant: "outline" })}>
+              View decided
+            </Link>
+          </PortalEmpty>
+        )}
+      </Panel>
+    </>
+  )
+}
+
+function QueueStat({ active, ...props }: React.ComponentProps<typeof Stat> & { active: boolean }) {
+  // Stat renders its own link, so the active marker and aria-current wrap it.
+  return (
+    <div aria-current={active ? "true" : undefined} className={cn("relative", active && "bg-accent/40")}>
+      {active && <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />}
+      <Stat {...props} />
     </div>
+  )
+}
+
+function QueueRow({ application, href, now }: { application: Application; href: string; now: Date | null }) {
+  const { basic, background, expertise } = application.data
+  const shownCategories = expertise.categories.slice(0, 2)
+  const extra = expertise.categories.length - shownCategories.length
+  const age = now ? ageOf(application, now) : null
+
+  return (
+    <li className="relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-3 transition-colors hover:bg-muted/60 sm:flex-nowrap">
+      <MentorAvatar name={basic.fullName} className="size-10" />
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-2">
+          <Link href={href} className="truncate font-medium outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-3 focus-visible:after:ring-ring/50">
+            {basic.fullName}
+          </Link>
+          {application.sample && <SamplePill />}
+        </p>
+        <p className="mt-0.5 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+          <span className="truncate">
+            {background.role}, {background.organization}
+          </span>
+          <span className="hidden shrink-0 items-center gap-1 md:flex">
+            {shownCategories.map((id) => (
+              <span key={id} className="rounded-md bg-muted px-1.5 py-0.5 text-xs">
+                {getCategory(id).label}
+              </span>
+            ))}
+            {extra > 0 && <span className="text-xs">+{extra}</span>}
+          </span>
+        </p>
+      </div>
+      <div className="flex w-full items-center gap-3 pl-13 sm:w-auto sm:pl-0">
+        <ApplicationStatusBadge status={application.status} />
+        {age && (
+          <span className={cn("flex items-center gap-1 text-sm whitespace-nowrap tabular-nums sm:w-36 sm:justify-end", age.overdue ? "font-medium text-warning" : "text-muted-foreground")}>
+            <ClockIcon className="size-3.5" aria-hidden="true" />
+            {age.label}
+          </span>
+        )}
+      </div>
+    </li>
   )
 }

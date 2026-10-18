@@ -1,13 +1,13 @@
 import { Badge } from "@/components/ui/badge"
 import { statusLabels, type ApplicationStatus } from "@/lib/mentor-application"
 
-const tones: Record<ApplicationStatus, "neutral" | "accent" | "warning" | "success"> = {
+const tones: Record<ApplicationStatus, "neutral" | "accent" | "warning" | "success" | "danger"> = {
   draft: "neutral",
   submitted: "accent",
-  "under-review": "accent",
+  "under-review": "warning",
   "info-required": "warning",
   approved: "success",
-  rejected: "neutral",
+  rejected: "danger",
 }
 
 export function ApplicationStatusBadge({ status, className }: { status: ApplicationStatus; className?: string }) {

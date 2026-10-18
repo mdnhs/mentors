@@ -3,8 +3,6 @@ import { Suspense } from "react"
 
 import { RequireSignIn } from "@/components/auth/require-sign-in"
 import { BookingDetail } from "@/components/dashboard/booking-detail"
-import { BackLink } from "@/components/site/back-link"
-import { Container } from "@/components/site/container"
 import { Skeleton } from "@/components/ui/skeleton"
 import { demoBookings } from "@/lib/data/bookings"
 
@@ -22,14 +20,11 @@ export function generateStaticParams() {
 
 export default function BookingDetailPage({ params }: PageProps<"/dashboard/bookings/[id]">) {
   return (
-    <Container className="max-w-5xl pt-6 pb-16 sm:pt-8 sm:pb-24">
-      <BackLink href="/dashboard">My sessions</BackLink>
-      <RequireSignIn role="learner">
-        <Suspense fallback={<Skeleton className="mt-6 h-64 rounded-2xl" />}>
-          <Detail params={params} />
-        </Suspense>
-      </RequireSignIn>
-    </Container>
+    <RequireSignIn role="learner">
+      <Suspense fallback={<Skeleton className="h-64 rounded-2xl" />}>
+        <Detail params={params} />
+      </Suspense>
+    </RequireSignIn>
   )
 }
 

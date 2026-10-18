@@ -4,7 +4,8 @@ import { Suspense, useState } from "react"
 import { useSearchParams } from "next/navigation"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, StatusBadge } from "@/components/admin/parts"
+import { StatusBadge, sentenceCase } from "@/components/admin/parts"
+import { PageHeader } from "@/components/portal/ui"
 import { useAdminSource } from "@/components/admin/use-admin"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
@@ -84,18 +85,17 @@ function AuditLogInner() {
       cell: (row) => (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-medium">{actionLabels[row.action]}</span>
-          <StatusBadge tone={categoryOf(row.action) === "finance" ? "warning" : categoryOf(row.action) === "moderation" ? "danger" : "accent"}>{categoryOf(row.action)}</StatusBadge>
+          <StatusBadge tone="neutral">{sentenceCase(categoryOf(row.action))}</StatusBadge>
         </div>
       ),
     },
-    { id: "target", header: "Target", csv: (row) => row.target, cell: (row) => <span className="font-mono text-xs">{row.target}</span> },
+    { id: "target", header: "Target", csv: (row) => row.target, cell: (row) => <span className="whitespace-nowrap text-xs tabular-nums">{row.target}</span> },
     { id: "detail", header: "Detail", secondary: true, csv: (row) => row.detail, cell: (row) => <span className="text-muted-foreground">{row.detail ?? "—"}</span> },
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Audit log" description="Every sensitive administrative action, newest first. Metadata only — no document contents, ID numbers or payment secrets." />
-      <DemoNotice>This trail is stored in this browser alongside the rest of the demo data. It is cleared by “Reset demo data”.</DemoNotice>
+    <div>
+      <PageHeader title="Audit log" description="Every sensitive admin action, newest first — metadata only." />
 
       <DataTable
         rows={rows}
@@ -108,7 +108,7 @@ function AuditLogInner() {
         initialSort={{ columnId: "at", direction: "desc" }}
         exportFilename="audit-log"
         pageResetKey={`${filter.from ?? ""}|${filter.to ?? ""}|${filter.actor ?? ""}`}
-        empty={source.admin.audit.length === 0 ? "No administrative actions have been recorded yet. Actions you take in the admin workspace appear here." : "No actions match these filters."}
+        empty={source.admin.audit.length === 0 ? "No admin actions recorded yet." : "No actions match these filters."}
         toolbar={
           <div className="flex shrink-0 flex-wrap items-end gap-3">
             <div className="grid gap-1">

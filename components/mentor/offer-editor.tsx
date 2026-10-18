@@ -9,11 +9,14 @@ import { CalendarOffIcon, CircleAlertIcon, CircleCheckIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { OfferPreviewCard } from "@/components/mentor/offer-preview"
-import { GuardedLink, UnsavedIndicator, useUnsavedGuard } from "@/components/mentor/unsaved-guard"
+import { SaveBar } from "@/components/mentor/save-bar"
+import { GuardedLink, useUnsavedGuard } from "@/components/mentor/unsaved-guard"
 import { useMentorWorkspace } from "@/components/mentor/use-mentor-workspace"
 import { offerIcons } from "@/components/mentors/offer-meta"
+import { PageHeader } from "@/components/portal/ui"
 import { EmptyState } from "@/components/site/empty-state"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,6 +27,7 @@ import { getSession } from "@/lib/data"
 import { creatableTypes, draftsEqual, draftToOffer, emptyDraft, isValid, offerToDraft, statusLabels, validateDraft, type DraftErrors, type OfferDraft } from "@/lib/offer-management"
 import { DEMO_MENTOR_SLUG } from "@/lib/permissions"
 import { saveOffer } from "@/lib/store"
+import { cn } from "@/lib/utils"
 import type { Offer, OfferType } from "@/lib/types"
 
 const typeBlurbs: Record<OfferType, string> = {
@@ -57,6 +61,8 @@ const focusFirstInvalid = (errors: DraftErrors) => {
   }
 }
 
+const statusTone = { published: "success", paused: "warning", draft: "neutral", archived: "neutral" } as const
+
 const newId = () => `${DEMO_MENTOR_SLUG}-${Math.random().toString(36).slice(2, 8)}`
 
 export function OfferEditor({ id }: { id: string }) {
@@ -65,7 +71,7 @@ export function OfferEditor({ id }: { id: string }) {
 
   if (id !== "new" && !existing) {
     return (
-      <EmptyState icon={CalendarOffIcon} headingAs="h1" title="We couldn't find that offer" description="It may belong to another account or no longer exist." className="mt-6">
+      <EmptyState icon={CalendarOffIcon} headingAs="h1" title="We couldn't find that offer" description="It may belong to another account or no longer exist.">
         <Link href="/dashboard/mentor/offers" className={buttonVariants()}>
           Back to offers
         </Link>
@@ -74,7 +80,7 @@ export function OfferEditor({ id }: { id: string }) {
   }
   if (existing?.status === "archived") {
     return (
-      <EmptyState icon={CalendarOffIcon} headingAs="h1" title="This offer is archived" description="Restore it from the offers list before editing." className="mt-6">
+      <EmptyState icon={CalendarOffIcon} headingAs="h1" title="This offer is archived" description="Restore it from the offers list before editing.">
         <Link href="/dashboard/mentor/offers" className={buttonVariants()}>
           Back to offers
         </Link>
@@ -90,6 +96,9 @@ export function OfferEditor({ id }: { id: string }) {
 function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
   const router = useRouter()
   const { actor, mentor, state } = useMentorWorkspace()
+  const session = existing?.type === "group" ? getSession(existing.sessionId) : undefined
+  const ownSeats = session ? state.bookings.filter((booking) => booking.sessionId === session.id && (booking.status === "confirmed" || booking.status === "pending")).length : 0
+  const minCapacity = session ? session.seats.taken + ownSeats : undefined
   const [draft, setDraft] = useState<OfferDraft>(() => (existing ? offerToDraft(existing, capacity) : emptyDraft("one-on-one")))
   const [saved, setSaved] = useState<OfferDraft | null>(() => (existing ? offerToDraft(existing, capacity) : null))
   const [chosen, setChosen] = useState(Boolean(existing))
@@ -98,9 +107,6 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
   const [serverErrors, setServerErrors] = useState<DraftErrors>({})
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
-  const session = existing?.type === "group" ? getSession(existing.sessionId) : undefined
-  const ownSeats = session ? state.bookings.filter((booking) => booking.sessionId === session.id && (booking.status === "confirmed" || booking.status === "pending")).length : 0
-  const minCapacity = session ? session.seats.taken + ownSeats : undefined
   const errors = { ...validateDraft(draft, { minCapacity }), ...serverErrors }
   const show = (field: keyof OfferDraft) => (submitted || touched[field] ? errors[field] : undefined)
   // Errors appear once a field is edited or the form is submitted, never on blur: a message appearing
@@ -154,140 +160,139 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
     setMessage({ tone: "ok", text })
   }
 
-  const crumbs = (
-    <PageBreadcrumbs
-      link={GuardedLink}
-      items={[{ label: "Offers", href: "/dashboard/mentor/offers" }, { label: existing ? existing.title : "New offer" }]}
-    />
-  )
+  const crumbs = <PageBreadcrumbs link={GuardedLink} className="mb-3" items={[{ label: "Offers", href: "/dashboard/mentor/offers" }, { label: existing ? existing.title : "New offer" }]} />
 
   if (!chosen) {
     return (
-      <div className="mt-6">
+      <div>
         {crumbs}
-        <h1 id="offer-type-heading" className="mt-4 text-heading">
-          What kind of offer?
-        </h1>
-        <RadioGroup
-          aria-labelledby="offer-type-heading"
-          value={draft.type}
-          onValueChange={(value: OfferType) => setDraft(emptyDraft(value))}
-          className="mt-4 grid gap-2 sm:grid-cols-3"
-        >
+        <Steps current={1} />
+        <PageHeader title="What kind of offer?" />
+        <RadioGroup aria-label="Offer type" value={draft.type} onValueChange={(value: OfferType) => setDraft(emptyDraft(value))} className="grid gap-3 sm:grid-cols-3">
           {creatableTypes.map((type) => {
             const Icon = offerIcons[type]
             return (
               <Radio.Root
                 key={type}
                 value={type}
-                className="flex cursor-pointer flex-col items-start gap-2 rounded-xl border bg-card p-4 text-left transition hover:border-foreground/20 focus-ring data-checked:border-primary data-checked:bg-accent/60"
+                className="flex cursor-pointer flex-col items-start gap-2 rounded-2xl border bg-card p-5 text-left transition-colors hover:border-foreground/20 focus-ring data-checked:border-primary data-checked:bg-accent/60"
               >
-                <Icon className="size-5 text-muted-foreground" aria-hidden="true" />
-                <span className="font-medium">{offerTypeLabels[type]}</span>
+                <span className="flex size-10 items-center justify-center rounded-xl bg-accent text-primary">
+                  <Icon className="size-5" aria-hidden="true" />
+                </span>
+                <span className="mt-1 font-medium">{offerTypeLabels[type]}</span>
                 <span className="text-sm text-muted-foreground">{typeBlurbs[type]}</span>
               </Radio.Root>
             )
           })}
         </RadioGroup>
-        <p className="mt-3 text-xs text-muted-foreground">Live group sessions are scheduled separately, so they appear in your offers once created.</p>
-        <Button size="lg" className="mt-6" onClick={() => setChosen(true)}>
-          Continue
-        </Button>
+        <p className="mt-3 text-xs text-muted-foreground">Group sessions are scheduled separately.</p>
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Button size="lg" onClick={() => setChosen(true)}>
+            Continue
+          </Button>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="mt-6">
+    <div>
       {crumbs}
-      <div className="mt-4 grid gap-8 lg:grid-cols-5">
+      {!existing && <Steps current={2} />}
+      <PageHeader
+        title={existing ? "Edit offer" : `New ${offerTypeLabels[draft.type].toLowerCase()}`}
+        description={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            {offerTypeLabels[draft.type]}
+            {existing && <Badge tone={statusTone[existing.status]}>{statusLabels[existing.status]}</Badge>}
+          </span>
+        }
+      />
+      <div className="grid gap-8 lg:grid-cols-5">
         <form
           noValidate
-          className="space-y-5 lg:col-span-3"
+          className="lg:col-span-3"
           onSubmit={(event) => {
             event.preventDefault()
             save(false)
           }}
         >
-          <div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h1 className="text-heading">{existing ? "Edit offer" : `New ${offerTypeLabels[draft.type].toLowerCase()}`}</h1>
-              <UnsavedIndicator dirty={dirty} />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {offerTypeLabels[draft.type]}
-              {existing && ` · ${statusLabels[existing.status]}`}
-            </p>
-          </div>
-
-          <Field id="offer-title" label="Title" error={show("title")}>
-            <Input id="offer-title" value={draft.title} maxLength={80} onChange={(event) => set("title", event.target.value)} />
-          </Field>
-
-          <Field id="offer-description" label="Short description" error={show("description")}>
-            <Textarea id="offer-description" rows={3} value={draft.description} maxLength={280} onChange={(event) => set("description", event.target.value)} className="bg-card" />
-          </Field>
-
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field id="offer-price" label={isGroup ? "Price per seat (৳)" : draft.type === "mentorship" ? "Price per month (৳)" : "Price (৳)"} error={show("price")} hint={isGroup ? "Set by the scheduled session." : "What you earn is this price minus the platform commission."}>
-              <Input id="offer-price" inputMode="numeric" value={draft.price} disabled={isGroup} onChange={(event) => set("price", event.target.value)} />
+          <div className="space-y-5 rounded-2xl border bg-card p-5 sm:p-6">
+            <Field id="offer-title" label="Title" error={show("title")}>
+              <Input id="offer-title" value={draft.title} maxLength={80} onChange={(event) => set("title", event.target.value)} />
             </Field>
-            {!isReview && (
-              <Field id="offer-duration" label="Duration (minutes)" error={show("durationMinutes")}>
-                <Input id="offer-duration" inputMode="numeric" value={draft.durationMinutes} disabled={isGroup} onChange={(event) => set("durationMinutes", event.target.value)} />
+
+            <Field id="offer-description" label="Short description" error={show("description")}>
+              <Textarea id="offer-description" rows={3} value={draft.description} maxLength={280} onChange={(event) => set("description", event.target.value)} />
+            </Field>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field id="offer-price" label={isGroup ? "Price per seat (৳)" : draft.type === "mentorship" ? "Price per month (৳)" : "Price (৳)"} error={show("price")} hint={isGroup ? "Set by the scheduled session." : "You earn this minus commission."}>
+                <Input id="offer-price" inputMode="numeric" value={draft.price} disabled={isGroup} onChange={(event) => set("price", event.target.value)} />
               </Field>
+              {!isReview && (
+                <Field id="offer-duration" label="Duration (minutes)" error={show("durationMinutes")}>
+                  <Input id="offer-duration" inputMode="numeric" value={draft.durationMinutes} disabled={isGroup} onChange={(event) => set("durationMinutes", event.target.value)} />
+                </Field>
+              )}
+            </div>
+
+            {draft.type === "mentorship" && (
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field id="offer-calls" label="Calls a month" error={show("sessionsPerMonth")}>
+                  <Input id="offer-calls" inputMode="numeric" value={draft.sessionsPerMonth} onChange={(event) => set("sessionsPerMonth", event.target.value)} />
+                </Field>
+                <Field id="offer-spots" label="Open mentee spots" error={show("openSpots")}>
+                  <Input id="offer-spots" inputMode="numeric" value={draft.openSpots} onChange={(event) => set("openSpots", event.target.value)} />
+                </Field>
+              </div>
+            )}
+
+            {isGroup && (
+              <Field id="offer-capacity" label="Seat capacity" error={show("capacity")} hint={minCapacity ? `At least ${minCapacity} seats are already taken.` : undefined}>
+                <Input id="offer-capacity" inputMode="numeric" value={draft.capacity} onChange={(event) => set("capacity", event.target.value)} className="sm:w-40" />
+              </Field>
+            )}
+
+            {isReview && (
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field id="offer-delivery" label="Delivered within (days)" error={show("deliveryDays")}>
+                  <Input id="offer-delivery" inputMode="numeric" value={draft.deliveryDays} onChange={(event) => set("deliveryDays", event.target.value)} />
+                </Field>
+                <Field id="offer-provides" label="What the learner sends" error={show("learnerProvides")}>
+                  <Input id="offer-provides" value={draft.learnerProvides} placeholder="e.g. Your CV as a PDF" onChange={(event) => set("learnerProvides", event.target.value)} />
+                </Field>
+              </div>
+            )}
+
+            <Field id="offer-includes" label={isReview ? "Deliverables (one per line)" : "What's included (one per line)"} error={show("includes")}>
+              <Textarea id="offer-includes" rows={4} value={draft.includes} onChange={(event) => set("includes", event.target.value)} placeholder={isReview ? "Line-by-line comments\nA one-page summary of fixes" : "Review of your goals\nWritten action list"} />
+            </Field>
+
+            {message && (
+              <Alert variant={message.tone === "error" ? "destructive" : "success"} role={message.tone === "error" ? "alert" : "status"}>
+                {message.tone === "error" ? <CircleAlertIcon aria-hidden="true" /> : <CircleCheckIcon aria-hidden="true" />}
+                <AlertDescription className="text-current">{message.text}</AlertDescription>
+              </Alert>
             )}
           </div>
 
-          {draft.type === "mentorship" && (
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field id="offer-calls" label="Calls a month" error={show("sessionsPerMonth")}>
-                <Input id="offer-calls" inputMode="numeric" value={draft.sessionsPerMonth} onChange={(event) => set("sessionsPerMonth", event.target.value)} />
-              </Field>
-              <Field id="offer-spots" label="Open mentee spots" error={show("openSpots")}>
-                <Input id="offer-spots" inputMode="numeric" value={draft.openSpots} onChange={(event) => set("openSpots", event.target.value)} />
-              </Field>
-            </div>
-          )}
-
-          {isGroup && (
-            <Field id="offer-capacity" label="Seat capacity" error={show("capacity")} hint={minCapacity ? `At least ${minCapacity} seats are already taken.` : undefined}>
-              <Input id="offer-capacity" inputMode="numeric" value={draft.capacity} onChange={(event) => set("capacity", event.target.value)} className="sm:w-40" />
-            </Field>
-          )}
-
-          {isReview && (
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field id="offer-delivery" label="Delivered within (days)" error={show("deliveryDays")}>
-                <Input id="offer-delivery" inputMode="numeric" value={draft.deliveryDays} onChange={(event) => set("deliveryDays", event.target.value)} />
-              </Field>
-              <Field id="offer-provides" label="What the learner sends" error={show("learnerProvides")}>
-                <Input id="offer-provides" value={draft.learnerProvides} placeholder="e.g. Your CV as a PDF" onChange={(event) => set("learnerProvides", event.target.value)} />
-              </Field>
-            </div>
-          )}
-
-          <Field id="offer-includes" label={isReview ? "Deliverables (one per line)" : "What's included (one per line)"} error={show("includes")}>
-            <Textarea id="offer-includes" rows={4} value={draft.includes} onChange={(event) => set("includes", event.target.value)} placeholder={isReview ? "Line-by-line comments\nA one-page summary of fixes" : "Review of your goals\nWritten action list"} className="bg-card" />
-          </Field>
-
-          {message && (
-            <Alert variant={message.tone === "error" ? "destructive" : "success"} role={message.tone === "error" ? "alert" : "status"}>
-              {message.tone === "error" ? <CircleAlertIcon aria-hidden="true" /> : <CircleCheckIcon aria-hidden="true" />}
-              <AlertDescription className="text-current">{message.text}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="lg" variant={existing?.status === "published" ? "default" : "outline"}>
+          <SaveBar dirty={dirty} idle={saved ? "All changes saved" : "Not saved yet"}>
+            {!existing && (
+              <Button type="button" variant="ghost" onClick={() => setChosen(false)}>
+                Back
+              </Button>
+            )}
+            <Button type="submit" variant={existing?.status === "published" ? "default" : "outline"}>
               {existing ? "Save changes" : "Save draft"}
             </Button>
             {existing?.status !== "published" && (
-              <Button type="button" size="lg" onClick={() => save(true)}>
+              <Button type="button" onClick={() => save(true)}>
                 {existing?.status === "paused" ? "Save and resume" : "Save and publish"}
               </Button>
             )}
-          </div>
+          </SaveBar>
         </form>
 
         <aside className="lg:col-span-2">
@@ -297,6 +302,26 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
         </aside>
       </div>
     </div>
+  )
+}
+
+const stepLabels = ["Choose type", "Offer details"]
+
+function Steps({ current }: { current: 1 | 2 }) {
+  return (
+    <ol aria-label="Progress" className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+      {stepLabels.map((label, index) => {
+        const step = index + 1
+        const active = step === current
+        return (
+          <li key={label} aria-current={active ? "step" : undefined} className="flex items-center gap-2">
+            <span className={cn("flex size-6 items-center justify-center rounded-full text-xs font-medium", step <= current ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{step}</span>
+            <span className={active ? "font-medium" : "text-muted-foreground"}>{label}</span>
+            {step < stepLabels.length && <span className="mx-1 h-px w-6 bg-border" aria-hidden="true" />}
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 

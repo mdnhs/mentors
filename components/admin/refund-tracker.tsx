@@ -5,13 +5,14 @@ import { CircleDollarSignIcon, GavelIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, ReasonDialog, SampleBadge, StatusBadge, moderationTone, notify } from "@/components/admin/parts"
+import { CopyId, ReasonDialog, SampleBadge, StatusBadge, moderationTone, notify } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
+import { PageHeader, Stat, StatStrip } from "@/components/portal/ui"
 import { ConfirmAction } from "@/components/site/confirm-action"
 import { Button } from "@/components/ui/button"
 import { adminCompleteRefund } from "@/lib/admin-client"
 import { disputeStatusLabels, type Dispute, type DisputeStatus } from "@/lib/admin"
-import { adminRefundOrders } from "@/lib/admin-selectors"
+import { adminRefundOrders, adminRefundStats } from "@/lib/admin-selectors"
 import { usePrincipal } from "@/lib/auth"
 import { getMentor } from "@/lib/data"
 import { formatDate, formatPrice } from "@/lib/format"
@@ -25,6 +26,7 @@ export function RefundTracker() {
   const [pending, setPending] = useState<{ dispute: Dispute; status: DisputeStatus } | null>(null)
 
   const orders = adminRefundOrders(source)
+  const stats = now ? adminRefundStats(source, now) : null
   const disputes = [...source.admin.disputes].sort((a, b) => b.openedAt.localeCompare(a.openedAt))
 
   const completeRefund = async (order: Order) => {
@@ -44,8 +46,8 @@ export function RefundTracker() {
       sortValue: (row) => row.id,
       cell: (row) => (
         <div>
-          <p className="font-medium">{row.id}</p>
-          <p className="text-xs text-muted-foreground">{row.title}</p>
+          <p className="font-medium">{row.title}</p>
+          <CopyId value={row.id} className="text-muted-foreground" />
         </div>
       ),
     },
@@ -93,7 +95,7 @@ export function RefundTracker() {
                   {formatPrice(row.refundAmount ?? 0, row.quote.currency)}
                   {row.refundPercent !== undefined && ` (${row.refundPercent}%)`}
                 </dd>
-                <dd className="col-span-2 mt-1 text-xs">The refund amount was set by the booking&apos;s cancellation policy when it was cancelled. Settling is a demo state change — no money moves.</dd>
+                <dd className="col-span-2 mt-1 text-xs">Set by the booking&apos;s cancellation policy. Demo only — no money moves.</dd>
               </dl>
             }
             confirmLabel="Complete refund"
@@ -108,7 +110,7 @@ export function RefundTracker() {
   ]
 
   const disputeColumns: Column<Dispute>[] = [
-    { id: "id", header: "Dispute", sortValue: (row) => row.id, cell: (row) => <span className="font-medium">{row.id}</span> },
+    { id: "id", header: "Dispute", sortValue: (row) => row.id, cell: (row) => <CopyId value={row.id} className="font-medium" /> },
     {
       id: "order",
       header: "Order",
@@ -173,70 +175,67 @@ export function RefundTracker() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Refunds & disputes" description="Orders with a refund, and learner disputes raised against sample orders." />
-      <DemoNotice>Completing a refund settles a demo refund — no money moves. Dispute outcomes are recorded, not paid out.</DemoNotice>
+    <div>
+      <PageHeader title="Refunds & disputes" description="Settle pending refunds and resolve learner disputes." />
 
-      <section aria-labelledby="refund-table">
-        <h2 id="refund-table" className="text-subheading">
-          Refunds
-        </h2>
-        <div className="mt-3">
-          <DataTable
-            rows={orders}
-            columns={refundColumns}
-            rowKey={(row) => row.id}
-            urlKey="refunds"
-            exportFilename="refunds"
-            search={(row) => `${row.id} ${row.title} ${row.mentorSlug}`}
-            searchPlaceholder="Search order or booking…"
-            searchLabel="Search refunds"
-            empty="No refunds are recorded."
-            filters={[
-              {
-                id: "status",
-                label: "Status",
-                options: [
-                  { id: "pending", label: "Pending", match: (row) => row.status === "refund-pending" },
-                  { id: "refunded", label: "Refunded", match: (row) => row.status === "refunded" },
-                  { id: "cancelled", label: "Cancelled", match: (row) => row.status === "cancelled" },
-                ],
-              },
-            ]}
-          />
-        </div>
-      </section>
+      <StatStrip label="Refund summary" className="mb-6">
+        <Stat label="Open disputes" value={stats?.openDisputes ?? "—"} hint="Open or investigating" />
+        <Stat label="Refunds pending" value={stats?.refundsPending ?? "—"} hint={stats ? `${formatPrice(stats.refundsPendingValue)} to settle` : undefined} />
+        <Stat label="Refunded this month" value={stats ? formatPrice(stats.refundedThisMonth) : "—"} hint={stats ? `${stats.refundedThisMonthCount} ${stats.refundedThisMonthCount === 1 ? "refund" : "refunds"}` : undefined} />
+      </StatStrip>
 
-      <section aria-labelledby="dispute-table">
-        <h2 id="dispute-table" className="text-subheading">
-          Disputes
-        </h2>
-        <div className="mt-3">
-          <DataTable
-            rows={disputes}
-            columns={disputeColumns}
-            rowKey={(row) => row.id}
-            urlKey="disputes"
-            exportFilename="disputes"
-            search={(row) => `${row.id} ${row.orderId} ${row.learnerEmail} ${row.reason}`}
-            searchPlaceholder="Search dispute, order or learner…"
-            searchLabel="Search disputes"
-            initialSort={{ columnId: "opened", direction: "desc" }}
-            filters={[
-              {
-                id: "status",
-                label: "Status",
-                options: [
-                  { id: "unresolved", label: "Unresolved", match: (row) => row.status === "open" || row.status === "investigating" },
-                  { id: "open", label: "Open", match: (row) => row.status === "open" },
-                  { id: "investigating", label: "Investigating", match: (row) => row.status === "investigating" },
-                  { id: "resolved", label: "Resolved", match: (row) => row.status === "refunded" || row.status === "declined" },
-                ],
-              },
-            ]}
-          />
-        </div>
-      </section>
+      <div className="space-y-6">
+        <DataTable
+          title="Refunds"
+          anchor="refund-table"
+          rows={orders}
+          columns={refundColumns}
+          rowKey={(row) => row.id}
+          urlKey="refunds"
+          exportFilename="refunds"
+          search={(row) => `${row.id} ${row.title} ${row.mentorSlug}`}
+          searchPlaceholder="Search order or booking…"
+          searchLabel="Search refunds"
+          empty="No refunds are recorded."
+          filters={[
+            {
+              id: "status",
+              label: "Status",
+              options: [
+                { id: "pending", label: "Pending", match: (row) => row.status === "refund-pending" },
+                { id: "refunded", label: "Refunded", match: (row) => row.status === "refunded" },
+                { id: "cancelled", label: "Cancelled", match: (row) => row.status === "cancelled" },
+              ],
+            },
+          ]}
+        />
+
+        <DataTable
+          title="Disputes"
+          anchor="dispute-table"
+          rows={disputes}
+          columns={disputeColumns}
+          rowKey={(row) => row.id}
+          urlKey="disputes"
+          exportFilename="disputes"
+          search={(row) => `${row.id} ${row.orderId} ${row.learnerEmail} ${row.reason}`}
+          searchPlaceholder="Search dispute, order or learner…"
+          searchLabel="Search disputes"
+          initialSort={{ columnId: "opened", direction: "desc" }}
+          filters={[
+            {
+              id: "status",
+              label: "Status",
+              options: [
+                { id: "unresolved", label: "Unresolved", match: (row) => row.status === "open" || row.status === "investigating" },
+                { id: "open", label: "Open", match: (row) => row.status === "open" },
+                { id: "investigating", label: "Investigating", match: (row) => row.status === "investigating" },
+                { id: "resolved", label: "Resolved", match: (row) => row.status === "refunded" || row.status === "declined" },
+              ],
+            },
+          ]}
+        />
+      </div>
 
       {pending && (
         <ReasonDialog
@@ -250,8 +249,6 @@ export function RefundTracker() {
           onCancel={() => setPending(null)}
         />
       )}
-
-      {now && <span className="sr-only">Rendered at {now.toISOString()}</span>}
     </div>
   )
 }

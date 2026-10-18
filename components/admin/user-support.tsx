@@ -4,7 +4,8 @@ import { useState } from "react"
 import { BanIcon, CircleCheckIcon, ClockIcon, RotateCcwIcon } from "lucide-react"
 
 import { DataTable, type Column } from "@/components/admin/data-table"
-import { AdminPageHeader, DemoNotice, ReasonDialog, notify, SampleBadge, StatusBadge, moderationTone } from "@/components/admin/parts"
+import { CopyId, ReasonDialog, notify, StatusBadge, moderationTone, sentenceCase } from "@/components/admin/parts"
+import { PageHeader, Stat, StatStrip } from "@/components/portal/ui"
 import { useAdminSource } from "@/components/admin/use-admin"
 import { Button } from "@/components/ui/button"
 import { usePrincipal } from "@/lib/auth"
@@ -45,7 +46,7 @@ export function UserSupport() {
         </div>
       ),
     },
-    { id: "kinds", header: "Role", secondary: true, csv: (row) => row.kinds.join("; "), cell: (row) => <span className="text-muted-foreground">{row.kinds.join(", ")}</span> },
+    { id: "kinds", header: "Role", secondary: true, csv: (row) => row.kinds.join("; "), cell: (row) => <span className="text-muted-foreground">{row.kinds.map(sentenceCase).join(", ")}</span> },
     { id: "applications", header: "Applications", align: "right", sortValue: (row) => row.applications, cell: (row) => <span className="tabular-nums">{row.applications || "—"}</span> },
     {
       id: "status",
@@ -77,11 +78,11 @@ export function UserSupport() {
   ]
 
   const ticketColumns: Column<SupportTicket>[] = [
-    { id: "id", header: "Ticket", sortValue: (row) => row.id, cell: (row) => <span className="font-medium">{row.id}</span> },
+    { id: "id", header: "Ticket", sortValue: (row) => row.id, cell: (row) => <CopyId value={row.id} className="font-medium" /> },
     { id: "subject", header: "Subject", sortValue: (row) => row.subject, cell: (row) => <span>{row.subject}</span> },
     { id: "email", header: "From", secondary: true, sortValue: (row) => row.email, cell: (row) => <span className="text-muted-foreground">{row.email}</span> },
-    { id: "priority", header: "Priority", secondary: true, csv: (row) => row.priority, cell: (row) => <StatusBadge tone={row.priority === "high" ? "danger" : row.priority === "low" ? "neutral" : "accent"}>{row.priority}</StatusBadge> },
-    { id: "status", header: "Status", sortValue: (row) => row.status, cell: (row) => <StatusBadge tone={moderationTone(row.status)}>{row.status}</StatusBadge> },
+    { id: "priority", header: "Priority", secondary: true, csv: (row) => row.priority, cell: (row) => <StatusBadge tone={row.priority === "high" ? "danger" : row.priority === "low" ? "neutral" : "accent"}>{sentenceCase(row.priority)}</StatusBadge> },
+    { id: "status", header: "Status", sortValue: (row) => row.status, cell: (row) => <StatusBadge tone={moderationTone(row.status)}>{sentenceCase(row.status)}</StatusBadge> },
     { id: "updated", header: "Updated", secondary: true, sortValue: (row) => row.updatedAt, cell: (row) => <span className="whitespace-nowrap text-muted-foreground">{formatDate(row.updatedAt)}</span> },
     {
       id: "action",
@@ -111,82 +112,80 @@ export function UserSupport() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Users & support" description="Accounts derived from applications, bookings, disputes and tickets, plus the demo support queue." />
-      <DemoNotice>Restrictions are recorded in this browser only and block nothing real. No ID documents, contact details beyond an email, or payment data are shown here.</DemoNotice>
+    <div>
+      <PageHeader title="Users & support" description="Accounts across the marketplace and the support queue." />
 
-      <section aria-labelledby="account-table">
-        <h2 id="account-table" className="text-subheading">
-          Accounts
-        </h2>
-        <div className="mt-3">
-          <DataTable
-            rows={accounts}
-            columns={accountColumns}
-            rowKey={(row) => row.email}
-            urlKey="accounts"
-            exportFilename="accounts"
-            search={(row) => `${row.name} ${row.email} ${row.kinds.join(" ")}`}
-            searchPlaceholder="Search email or name…"
-            searchLabel="Search accounts"
-            initialSort={{ columnId: "account", direction: "asc" }}
-            filters={[
-              {
-                id: "status",
-                label: "Status",
-                options: [
-                  { id: "active", label: "Active", match: (row) => !row.restricted },
-                  { id: "restricted", label: "Restricted", match: (row) => row.restricted },
-                ],
-              },
-            ]}
-          />
-        </div>
-      </section>
+      <StatStrip label="Accounts and tickets" className="mb-6">
+        <Stat label="Accounts" value={accounts.length} />
+        <Stat label="Restricted" value={accounts.filter((row) => row.restricted).length} />
+        <Stat label="Open tickets" value={tickets.filter((row) => row.status === "open").length} />
+        <Stat label="High priority" value={tickets.filter((row) => row.priority === "high" && row.status !== "closed").length} hint="Not yet closed" />
+      </StatStrip>
 
-      <section aria-labelledby="ticket-table">
-        <h2 id="ticket-table" className="text-subheading">
-          Support queue
-        </h2>
-        <div className="mt-3">
-          <DataTable
-            rows={tickets}
-            columns={ticketColumns}
-            rowKey={(row) => row.id}
-            urlKey="tickets"
-            exportFilename="support-tickets"
-            selectable
-            bulkActions={(selected, clear) => (
-              <>
-                <Button variant="outline" size="sm" onClick={() => { bulkTickets(selected, "pending"); clear() }}>
-                  <ClockIcon aria-hidden="true" />
-                  Mark pending
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => { bulkTickets(selected, "closed"); clear() }}>
-                  <CircleCheckIcon aria-hidden="true" />
-                  Close
-                </Button>
-              </>
-            )}
-            search={(row) => `${row.id} ${row.subject} ${row.email}`}
-            searchPlaceholder="Search ticket, subject or email…"
-            searchLabel="Search tickets"
-            empty="No support tickets."
-            initialSort={{ columnId: "updated", direction: "desc" }}
-            filters={[
-              {
-                id: "status",
-                label: "Status",
-                options: [
-                  { id: "open", label: "Open", match: (row) => row.status === "open" },
-                  { id: "pending", label: "Pending", match: (row) => row.status === "pending" },
-                  { id: "closed", label: "Closed", match: (row) => row.status === "closed" },
-                ],
-              },
-            ]}
-          />
-        </div>
-      </section>
+      <div className="space-y-6">
+        <DataTable
+          title="Accounts"
+          anchor="account-table"
+          rows={accounts}
+          columns={accountColumns}
+          rowKey={(row) => row.email}
+          urlKey="accounts"
+          exportFilename="accounts"
+          search={(row) => `${row.name} ${row.email} ${row.kinds.join(" ")}`}
+          searchPlaceholder="Search email or name…"
+          searchLabel="Search accounts"
+          initialSort={{ columnId: "account", direction: "asc" }}
+          filters={[
+            {
+              id: "status",
+              label: "Status",
+              options: [
+                { id: "active", label: "Active", match: (row) => !row.restricted },
+                { id: "restricted", label: "Restricted", match: (row) => row.restricted },
+              ],
+            },
+          ]}
+        />
+
+        <DataTable
+          title="Support queue"
+          anchor="ticket-table"
+          rows={tickets}
+          columns={ticketColumns}
+          rowKey={(row) => row.id}
+          urlKey="tickets"
+          exportFilename="support-tickets"
+          selectable
+          bulkActions={(selected, clear) => (
+            <>
+              <Button variant="outline" size="sm" onClick={() => { bulkTickets(selected, "pending"); clear() }}>
+                <ClockIcon aria-hidden="true" />
+                Mark pending
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => { bulkTickets(selected, "closed"); clear() }}>
+                <CircleCheckIcon aria-hidden="true" />
+                Close
+              </Button>
+            </>
+          )}
+          search={(row) => `${row.id} ${row.subject} ${row.email}`}
+          searchPlaceholder="Search ticket, subject or email…"
+          searchLabel="Search tickets"
+          empty="No support tickets."
+          initialSort={{ columnId: "updated", direction: "desc" }}
+          filters={[
+            {
+              id: "status",
+              label: "Status",
+              options: [
+                { id: "open", label: "Open", match: (row) => row.status === "open" },
+                { id: "pending", label: "Pending", match: (row) => row.status === "pending" },
+                { id: "closed", label: "Closed", match: (row) => row.status === "closed" },
+              ],
+            },
+          ]}
+        />
+      </div>
 
       {pending && (
         <ReasonDialog
@@ -200,11 +199,6 @@ export function UserSupport() {
           onCancel={() => setPending(null)}
         />
       )}
-
-
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <SampleBadge /> Tickets and reporter accounts are made up demo records.
-      </p>
     </div>
   )
 }
