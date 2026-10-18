@@ -6,7 +6,7 @@ import { getMentor } from "@/lib/data"
 import { incomingBookings, incomingOrders } from "@/lib/data/incoming"
 import { mentorBookings, mentorTasks, splitMentorBookings } from "@/lib/mentor-dashboard"
 import { earningsByMonth, requestPayout, settlePayout, statement, summarize, type FinanceData, type Payout } from "@/lib/mentor-finance"
-import { draftsEqual, draftToOffer, emptyDraft, manageOffers, offerToDraft, validateDraft, type OfferDraft } from "@/lib/offer-management"
+import { draftsEqual, draftToOffer, draftToSession, emptyDraft, manageOffers, offerToDraft, validateDraft, type OfferDraft } from "@/lib/offer-management"
 import { advance, withRefund } from "@/lib/orders"
 import { cancelWithRefund } from "@/lib/payment-service"
 import { actorFor, DEMO_MENTOR_SLUG } from "@/lib/permissions"
@@ -90,8 +90,19 @@ test.describe("managing offers", () => {
     expect(result).toMatchObject({ ok: false, code: "invalid", errors: { price: expect.any(String), title: expect.any(String) } })
   })
 
-  test("group offers are scheduled sessions, so they can't be created here", () => {
-    expect(create(catalog, goodDraft({ type: "group" }))).toMatchObject({ ok: false, code: "invalid" })
+  test("a group offer needs a start time in the future", () => {
+    const group = goodDraft({ type: "group", language: "English" })
+    expect(create(catalog, group)).toMatchObject({ ok: false, code: "invalid", errors: { startsAt: expect.any(String) } })
+    const past = manageOffers(mentorActor, DEMO_MENTOR_SLUG, catalog, { kind: "create", draft: { ...group, startsAt: "2026-01-01T10:00" }, id: "g" }, { now: new Date("2026-06-01T00:00:00Z") })
+    expect(past).toMatchObject({ ok: false, errors: { startsAt: "Pick a time in the future" } })
+  })
+
+  test("a valid group offer is created as a draft linked to its own session", () => {
+    const draft = goodDraft({ type: "group", startsAt: "2099-01-01T19:00", language: "English", capacity: "25" })
+    const result = create(catalog, draft, "g-new")
+    expect(result.ok && result.offer).toMatchObject({ type: "group", status: "draft", sessionId: "g-new" })
+    const session = draftToSession(draft, "g-new", getMentor(DEMO_MENTOR_SLUG)!)
+    expect(session).toMatchObject({ id: "g-new", mentorSlug: DEMO_MENTOR_SLUG, startsAt: "2099-01-01T19:00:00+06:00", seats: { total: 25, taken: 0 } })
   })
 
   test("duplicate ids are refused", () => {

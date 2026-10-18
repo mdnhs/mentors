@@ -24,7 +24,7 @@ import { PageBreadcrumbs } from "@/components/ui/page-breadcrumbs"
 import { Textarea } from "@/components/ui/textarea"
 import { offerTypeLabels } from "@/lib/categories"
 import { getSession } from "@/lib/data"
-import { creatableTypes, draftsEqual, draftToOffer, emptyDraft, isValid, offerToDraft, statusLabels, validateDraft, type DraftErrors, type OfferDraft } from "@/lib/offer-management"
+import { creatableTypes, draftsEqual, draftToOffer, emptyDraft, isValid, offerToDraft, sessionEditable, statusLabels, validateDraft, type DraftErrors, type OfferDraft } from "@/lib/offer-management"
 import { DEMO_MENTOR_SLUG } from "@/lib/permissions"
 import { saveOffer } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -43,6 +43,8 @@ const fieldIds: [keyof OfferDraft, string][] = [
   ["description", "offer-description"],
   ["price", "offer-price"],
   ["durationMinutes", "offer-duration"],
+  ["startsAt", "offer-starts"],
+  ["language", "offer-language"],
   ["sessionsPerMonth", "offer-calls"],
   ["openSpots", "offer-spots"],
   ["capacity", "offer-capacity"],
@@ -95,19 +97,20 @@ export function OfferEditor({ id }: { id: string }) {
 
 function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
   const router = useRouter()
-  const { actor, mentor, state } = useMentorWorkspace()
+  const { actor, mentor, state, now } = useMentorWorkspace()
   const session = existing?.type === "group" ? getSession(existing.sessionId) : undefined
   const ownSeats = session ? state.bookings.filter((booking) => booking.sessionId === session.id && (booking.status === "confirmed" || booking.status === "pending")).length : 0
   const minCapacity = session ? session.seats.taken + ownSeats : undefined
-  const [draft, setDraft] = useState<OfferDraft>(() => (existing ? offerToDraft(existing, capacity) : emptyDraft("one-on-one")))
-  const [saved, setSaved] = useState<OfferDraft | null>(() => (existing ? offerToDraft(existing, capacity) : null))
+  const sessionFields = !existing || (session !== undefined && sessionEditable(state.workspace.sessions.some((item) => item.id === session.id), session, minCapacity ?? 0, now))
+  const [draft, setDraft] = useState<OfferDraft>(() => (existing ? offerToDraft(existing, capacity, session) : emptyDraft("one-on-one")))
+  const [saved, setSaved] = useState<OfferDraft | null>(() => (existing ? offerToDraft(existing, capacity, session) : null))
   const [chosen, setChosen] = useState(Boolean(existing))
   const [submitted, setSubmitted] = useState(false)
   const [touched, setTouched] = useState<Partial<Record<keyof OfferDraft, boolean>>>({})
   const [serverErrors, setServerErrors] = useState<DraftErrors>({})
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
-  const errors = { ...validateDraft(draft, { minCapacity }), ...serverErrors }
+  const errors = { ...validateDraft(draft, { minCapacity, sessionFields }), ...serverErrors }
   const show = (field: keyof OfferDraft) => (submitted || touched[field] ? errors[field] : undefined)
   // Errors appear once a field is edited or the form is submitted, never on blur: a message appearing
   // under a field on blur shifts the buttons below it and can swallow the click that caused the blur.
@@ -121,13 +124,13 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
   const dirty = chosen && !draftsEqual(draft, saved ?? emptyDraft(draft.type))
   useUnsavedGuard(dirty)
 
-  const preview = draftToPreview(draft, existing)
+  const preview = draftToPreview(draft, existing, sessionFields)
   const isGroup = draft.type === "group"
   const isReview = draft.type === "review"
 
   const save = (publish: boolean) => {
     setSubmitted(true)
-    const invalid = validateDraft(draft, { minCapacity })
+    const invalid = validateDraft(draft, { minCapacity, sessionFields })
     if (!isValid(invalid)) {
       setMessage({ tone: "error", text: "Fix the highlighted fields to continue." })
       focusFirstInvalid(invalid)
@@ -168,7 +171,7 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
         {crumbs}
         <Steps current={1} />
         <PageHeader title="What kind of offer?" />
-        <RadioGroup aria-label="Offer type" value={draft.type} onValueChange={(value: OfferType) => setDraft(emptyDraft(value))} className="grid gap-3 sm:grid-cols-3">
+        <RadioGroup aria-label="Offer type" value={draft.type} onValueChange={(value: OfferType) => setDraft(emptyDraft(value))} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {creatableTypes.map((type) => {
             const Icon = offerIcons[type]
             return (
@@ -186,7 +189,6 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
             )
           })}
         </RadioGroup>
-        <p className="mt-3 text-xs text-muted-foreground">Group sessions are scheduled separately.</p>
         <div className="mt-6 flex flex-wrap gap-2">
           <Button size="lg" onClick={() => setChosen(true)}>
             Continue
@@ -228,12 +230,12 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
             </Field>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field id="offer-price" label={isGroup ? "Price per seat (৳)" : draft.type === "mentorship" ? "Price per month (৳)" : "Price (৳)"} error={show("price")} hint={isGroup ? "Set by the scheduled session." : "You earn this minus commission."}>
-                <Input id="offer-price" inputMode="numeric" value={draft.price} disabled={isGroup} onChange={(event) => set("price", event.target.value)} />
+              <Field id="offer-price" label={isGroup ? "Price per seat (৳)" : draft.type === "mentorship" ? "Price per month (৳)" : "Price (৳)"} error={show("price")} hint={isGroup && !sessionFields ? "Locked once seats are booked or the session has started." : "You earn this minus commission."}>
+                <Input id="offer-price" inputMode="numeric" value={draft.price} disabled={isGroup && !sessionFields} onChange={(event) => set("price", event.target.value)} />
               </Field>
               {!isReview && (
                 <Field id="offer-duration" label="Duration (minutes)" error={show("durationMinutes")}>
-                  <Input id="offer-duration" inputMode="numeric" value={draft.durationMinutes} disabled={isGroup} onChange={(event) => set("durationMinutes", event.target.value)} />
+                  <Input id="offer-duration" inputMode="numeric" value={draft.durationMinutes} disabled={isGroup && !sessionFields} onChange={(event) => set("durationMinutes", event.target.value)} />
                 </Field>
               )}
             </div>
@@ -253,6 +255,17 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
               <Field id="offer-capacity" label="Seat capacity" error={show("capacity")} hint={minCapacity ? `At least ${minCapacity} seats are already taken.` : undefined}>
                 <Input id="offer-capacity" inputMode="numeric" value={draft.capacity} onChange={(event) => set("capacity", event.target.value)} className="sm:w-40" />
               </Field>
+            )}
+
+            {isGroup && sessionFields && (
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field id="offer-starts" label="Starts (Dhaka time)" error={show("startsAt")}>
+                  <Input id="offer-starts" type="datetime-local" value={draft.startsAt} onChange={(event) => set("startsAt", event.target.value)} />
+                </Field>
+                <Field id="offer-language" label="Language" error={show("language")}>
+                  <Input id="offer-language" value={draft.language} maxLength={40} onChange={(event) => set("language", event.target.value)} />
+                </Field>
+              </div>
             )}
 
             {isReview && (
@@ -347,8 +360,8 @@ function Field({ id, label, error, hint, children }: { id: string; label: string
 }
 
 // Builds what the learner would see from a half-finished draft, falling back to the saved offer for group seats.
-function draftToPreview(draft: OfferDraft, existing?: Offer): Offer {
-  if (draft.type === "group" && existing?.type === "group") return draftToOffer(draft, existing.id, existing.status, existing)
+function draftToPreview(draft: OfferDraft, existing?: Offer, sessionFields = false): Offer {
+  if (draft.type === "group" && existing?.type === "group") return draftToOffer(draft, existing.id, existing.status, existing, sessionFields)
   const base = draft.type === "group" ? "one-on-one" : draft.type
   return draftToOffer({ ...draft, type: base }, existing?.id ?? "preview", existing?.status ?? "draft", existing)
 }

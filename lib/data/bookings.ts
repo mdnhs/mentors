@@ -1,6 +1,29 @@
 import type { Booking, BookingNotes, ReviewedBooking } from "@/lib/types"
 
+const HOUR_MS = 60 * 60_000
+
+export const LIVE_DEMO_ID = "bk-1005"
+
+// Starts at the top of the current hour and runs two, so it is in progress for at least an hour after load.
+const liveSessionStart = () => new Date(Math.floor(Date.now() / HOUR_MS) * HOUR_MS).toISOString()
+
+// A saved copy keeps the time it was first seeded with, so it is moved to the present on every load.
+export const withLiveDemo = (booking: Booking): Booking => (booking.id === LIVE_DEMO_ID && booking.status === "confirmed" ? { ...booking, date: liveSessionStart() } : booking)
+
 export const demoBookings: Booking[] = [
+  {
+    id: LIVE_DEMO_ID,
+    kind: "one-on-one",
+    mentorSlug: "nusrat-jahan",
+    offerId: "nusrat-roadmap",
+    title: "AI career roadmap",
+    date: liveSessionStart(),
+    durationMinutes: 120,
+    timezone: "Asia/Dhaka",
+    total: 945,
+    status: "confirmed",
+    sample: true,
+  },
   {
     id: "bk-1001",
     kind: "one-on-one",
@@ -25,6 +48,30 @@ export const demoBookings: Booking[] = [
     timezone: "Asia/Dhaka",
     total: 261,
     status: "confirmed",
+    sample: true,
+  },
+  {
+    id: "bk-1003",
+    kind: "review",
+    mentorSlug: "arif-hossain",
+    offerId: "arif-proposal",
+    title: "Research proposal review",
+    date: "2026-10-23T12:00:00+06:00",
+    timezone: "Asia/Dhaka",
+    total: 2625,
+    status: "in-review",
+    sample: true,
+  },
+  {
+    id: "bk-1004",
+    kind: "review",
+    mentorSlug: "rumana-akter",
+    offerId: "rumana-essay",
+    title: "Scholarship essay review",
+    date: "2026-10-26T12:00:00+06:00",
+    timezone: "Asia/Dhaka",
+    total: 1575,
+    status: "in-review",
     sample: true,
   },
   {

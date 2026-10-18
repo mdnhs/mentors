@@ -2,7 +2,7 @@ import { demoBookings, reviewedBookings } from "@/lib/data/bookings"
 import { mentors } from "@/lib/data/mentors"
 import { reviews } from "@/lib/data/reviews"
 import { groupSessions } from "@/lib/data/sessions"
-import type { Mentor, Review, ReviewedBooking } from "@/lib/types"
+import type { GroupSession, Mentor, Review, ReviewedBooking } from "@/lib/types"
 
 // Single access layer so the demo data can later be swapped for API calls.
 export function getMentors() {
@@ -62,12 +62,19 @@ export function availabilityLabel(mentor: Mentor) {
   return `Most days, ${period}`
 }
 
+// Sessions a mentor created in the browser; the store keeps this in step so lookups see them beside the catalog.
+let createdSessions: GroupSession[] = []
+
+export function setCreatedSessions(sessions: GroupSession[]) {
+  createdSessions = sessions
+}
+
 export function getSessions() {
-  return [...groupSessions].sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+  return [...groupSessions, ...createdSessions].sort((a, b) => a.startsAt.localeCompare(b.startsAt))
 }
 
 export function getSession(id: string) {
-  return groupSessions.find((session) => session.id === id)
+  return groupSessions.find((session) => session.id === id) ?? createdSessions.find((session) => session.id === id)
 }
 
 export function getMentorSessions(slug: string) {

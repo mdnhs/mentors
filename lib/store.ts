@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react"
 
-import { demoBookings, demoNotes, demoSavedMentors } from "@/lib/data/bookings"
+import { demoBookings, demoNotes, demoSavedMentors, withLiveDemo } from "@/lib/data/bookings"
 import { demoApplications } from "@/lib/data/applications"
 import { demoDisputes, demoTickets } from "@/lib/data/admin"
 import { incomingBookings, incomingOrders } from "@/lib/data/incoming"
@@ -19,16 +19,16 @@ import {
   type AdminState,
 } from "@/lib/admin"
 import { createDraft, review, submit, updateDraft, viewEvidence, type Application, type ApplicationData, type ReviewAction } from "@/lib/mentor-application"
-import { getMentor, getMentors, getReviewById, getSession } from "@/lib/data"
+import { getMentor, getMentors, getReviewById, getSession, setCreatedSessions } from "@/lib/data"
 import { validateAvailability, type AvailabilityErrors } from "@/lib/availability-settings"
 import { deliverReview } from "@/lib/booking-service"
-import { manageOffers, validateCapacity, type OfferChange, type OfferResult } from "@/lib/offer-management"
+import { applyDraftToSession, draftToSession, manageOffers, sessionEditable, validateCapacity, type OfferChange, type OfferResult } from "@/lib/offer-management"
 import { requestPayout, settlePayout, type Payout, type PayoutResult } from "@/lib/mentor-finance"
 import { canManageMentor, DEMO_MENTOR_SLUG, FORBIDDEN, isAdmin, ADMIN_FORBIDDEN, type Actor, type Principal } from "@/lib/permissions"
 import type { Order } from "@/lib/orders"
 import type { Commerce } from "@/lib/payment-service"
 import { site } from "@/lib/site"
-import type { ActionItem, Booking, BookingNotes, MentorAvailability, NotificationPrefs, Offer, Profile } from "@/lib/types"
+import type { ActionItem, Booking, BookingNotes, GroupSession, MentorAvailability, NotificationPrefs, Offer, Profile } from "@/lib/types"
 
 type State = {
   saved: string[]
@@ -42,7 +42,7 @@ type State = {
   // Administration: moderation overrides, refund disputes, support tickets and the audit trail.
   admin: AdminState
   // The demo mentor's edits; null means "as in the catalog".
-  workspace: { offers: Offer[] | null; availability: MentorAvailability | null }
+  workspace: { offers: Offer[] | null; availability: MentorAvailability | null; sessions: GroupSession[] }
 } & Commerce
 
 const STORAGE_KEY = "mentorbridge:v1"
@@ -59,7 +59,7 @@ const initialState: State = {
   payouts: [],
   applications: demoApplications,
   admin: { ...emptyAdminState, disputes: demoDisputes, tickets: demoTickets },
-  workspace: { offers: null, availability: null },
+  workspace: { offers: null, availability: null, sessions: [] },
   notes: demoNotes,
   profile: defaultProfile,
   notifications: defaultNotifications,
@@ -95,12 +95,12 @@ function loadFromStorage(): State {
         disputes: Array.isArray(stored.admin?.disputes) ? stored.admin.disputes : initialState.admin.disputes,
         tickets: Array.isArray(stored.admin?.tickets) ? stored.admin.tickets : initialState.admin.tickets,
       },
-      workspace: { ...initialState.workspace, ...stored.workspace },
+      workspace: { ...initialState.workspace, ...stored.workspace, sessions: Array.isArray(stored.workspace?.sessions) ? stored.workspace.sessions : [] },
       notes: stored.notes && typeof stored.notes === "object" ? stored.notes : initialState.notes,
       profile: { ...defaultProfile, ...stored.profile },
       notifications: { ...defaultNotifications, ...stored.notifications },
       cancelledSessions: stored.cancelledSessions && typeof stored.cancelledSessions === "object" ? stored.cancelledSessions : {},
-      bookings: bookings.map((booking) => ((booking.status as string) === "upcoming" ? { ...booking, status: "confirmed" } : booking)),
+      bookings: bookings.map((booking) => withLiveDemo((booking.status as string) === "upcoming" ? { ...booking, status: "confirmed" } : booking)),
     }
   } catch {
     return initialState
@@ -111,15 +111,18 @@ function readStorage() {
   if (hydrated) return
   hydrated = true
   state = loadFromStorage()
+  setCreatedSessions(state.workspace.sessions)
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY) return
     state = loadFromStorage()
+    setCreatedSessions(state.workspace.sessions)
     listeners.forEach((listener) => listener())
   })
 }
 
 function setState(next: State) {
   state = next
+  setCreatedSessions(state.workspace.sessions)
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch {}
@@ -291,20 +294,31 @@ export function saveOffer(actor: Actor | null, change: OfferChange, capacity?: {
   const offers = mentorOffers()
   const existing = "id" in change ? offers.find((offer) => offer.id === change.id) : undefined
   const session = existing?.type === "group" ? getSession(existing.sessionId) : undefined
-  const result = manageOffers(actor, DEMO_MENTOR_SLUG, offers, change, { minCapacity: session?.seats.taken })
+  const created = session ? state.workspace.sessions.some((item) => item.id === session.id) : false
+  const heldSeats = session ? session.seats.taken + ownSeats(session.id) : 0
+  const editable = session ? sessionEditable(created, session, heldSeats, new Date()) : false
+  const result = manageOffers(actor, DEMO_MENTOR_SLUG, offers, change, { minCapacity: session?.seats.taken, now: new Date(), sessionEditable: editable })
   if (!result.ok) return result
   const capacityError = capacity && groupCapacityError(capacity.sessionId, capacity.value)
   if (capacityError) return { ok: false, code: "invalid", message: capacityError, errors: { capacity: capacityError } }
   const sessionCapacity = capacity ? { ...state.sessionCapacity, [capacity.sessionId]: Number(capacity.value) } : state.sessionCapacity
-  setState({ ...state, sessionCapacity, workspace: { ...state.workspace, offers: result.offers } })
+  const mentor = getMentor(DEMO_MENTOR_SLUG)!
+  const sessions =
+    change.kind === "create" && result.offer.type === "group"
+      ? [...state.workspace.sessions, draftToSession(change.draft, result.offer.id, mentor)]
+      : change.kind === "update" && editable && session
+        ? state.workspace.sessions.map((item) => (item.id === session.id ? applyDraftToSession(item, change.draft) : item))
+        : state.workspace.sessions
+  setState({ ...state, sessionCapacity, workspace: { ...state.workspace, offers: result.offers, sessions } })
   return result
 }
+
+const ownSeats = (sessionId: string) => state.bookings.filter((booking) => booking.sessionId === sessionId && (booking.status === "confirmed" || booking.status === "pending")).length
 
 function groupCapacityError(sessionId: string, value: string): string | undefined {
   const session = getSession(sessionId)
   if (!session || session.mentorSlug !== DEMO_MENTOR_SLUG) return "We couldn't find that session."
-  const own = state.bookings.filter((booking) => booking.sessionId === sessionId && (booking.status === "confirmed" || booking.status === "pending")).length
-  return validateCapacity(value, session.seats.taken + own)
+  return validateCapacity(value, session.seats.taken + ownSeats(sessionId))
 }
 
 export function deliverReviewAsMentor(actor: Actor | null, bookingId: string, scope: "learner" | "incoming") {
