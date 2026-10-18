@@ -10,7 +10,7 @@ import { PasswordField } from "@/components/auth/password-field"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { safeNext, signIn } from "@/lib/auth"
+import { landingFor, safeNext, signIn } from "@/lib/auth"
 import { saveProfile, useAppState } from "@/lib/store"
 
 const goals = [
@@ -44,7 +44,7 @@ export function SignupForm() {
     }
     saveProfile({ ...profile, name: name.trim(), email: email.trim() })
     toast.success("Account created")
-    router.push(safeNext(next, goal === "mentor-applicant" ? "/become-a-mentor" : "/dashboard"))
+    router.push(next ? landingFor("learner", next) : goal === "mentor-applicant" ? "/become-a-mentor" : "/dashboard")
   }
 
   return (

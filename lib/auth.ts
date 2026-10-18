@@ -87,3 +87,21 @@ export const homeFor = (role: Role) => workspaces[role].href
 export function safeNext(next: string | null | undefined, fallback: string) {
   return next && next.startsWith("/") && !next.startsWith("//") && !/[\\\s]/.test(next) ? next : fallback
 }
+
+// Workspace pages belong to one role; following `next` into another role's area would land on an access wall.
+function ownerOf(path: string): Role | null {
+  const pathname = path.split(/[?#]/)[0]
+  const under = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  if (under("/dashboard/admin")) return "admin"
+  if (under("/dashboard/mentor")) return "mentor"
+  if (under("/dashboard/reviewer")) return "reviewer"
+  if (pathname === "/dashboard" || under("/dashboard/bookings") || under("/dashboard/saved")) return "learner"
+  return null
+}
+
+export function landingFor(role: Role, next: string | null | undefined) {
+  const home = homeFor(role)
+  const target = safeNext(next, home)
+  const owner = ownerOf(target)
+  return owner && owner !== role ? home : target
+}

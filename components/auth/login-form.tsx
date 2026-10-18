@@ -10,7 +10,7 @@ import { PasswordField } from "@/components/auth/password-field"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { homeFor, safeNext, signIn } from "@/lib/auth"
+import { landingFor, safeNext, signIn } from "@/lib/auth"
 import type { Role } from "@/lib/permissions"
 import { site } from "@/lib/site"
 
@@ -40,7 +40,7 @@ export function LoginForm() {
       return
     }
     toast.success("Logged in")
-    router.push(safeNext(next, homeFor(role)))
+    router.push(landingFor(role, next))
   }
 
   return (
