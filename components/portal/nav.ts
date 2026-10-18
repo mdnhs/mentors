@@ -8,6 +8,7 @@ import {
   HeartIcon,
   LayersIcon,
   LayoutDashboardIcon,
+  MessageSquareIcon,
   ReceiptTextIcon,
   ScrollTextIcon,
   SettingsIcon,
@@ -52,6 +53,7 @@ export const portals: Record<Role, Portal> = {
         items: [
           { href: "/dashboard", label: "Overview", icon: LayoutDashboardIcon, primary: true, exact: true },
           { href: "/dashboard/bookings", label: "Bookings", icon: CalendarDaysIcon, primary: true },
+          { href: "/dashboard/messages", label: "Messages", icon: MessageSquareIcon, primary: true },
           { href: "/dashboard/saved", label: "Saved mentors", icon: HeartIcon, primary: true },
           { href: "/dashboard/settings", label: "Settings", icon: SettingsIcon },
         ],
@@ -71,6 +73,7 @@ export const portals: Record<Role, Portal> = {
         items: [
           { href: "/dashboard/mentor", label: "Overview", icon: LayoutDashboardIcon, primary: true, exact: true },
           { href: "/dashboard/mentor/bookings", label: "Bookings", icon: CalendarDaysIcon, primary: true },
+          { href: "/dashboard/mentor/messages", label: "Messages", icon: MessageSquareIcon, primary: true },
           { href: "/dashboard/mentor/offers", label: "Offers", icon: LayersIcon, primary: true },
           { href: "/dashboard/mentor/availability", label: "Availability", icon: CalendarClockIcon },
           { href: "/dashboard/mentor/earnings", label: "Earnings", icon: WalletIcon },
