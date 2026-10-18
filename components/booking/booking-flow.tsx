@@ -49,7 +49,7 @@ type FlowProps = { mentor: Mentor; offers: Offer[]; initialOffer?: Offer; reques
 function Flow({ mentor, offers, initialOffer, requested }: FlowProps) {
   const isClient = useIsClient()
   const searchParams = useSearchParams()
-  const { bookings, orders } = useAppState()
+  const { bookings, orders, incoming } = useAppState()
   const firstName = mentor.name.split(" ")[0]
 
   const [now] = useState(() => new Date())
@@ -210,6 +210,7 @@ function Flow({ mentor, offers, initialOffer, requested }: FlowProps) {
                 mentor={mentor}
                 durationMinutes={offer.durationMinutes}
                 bookings={bookings}
+                otherBookings={incoming.bookings}
                 now={now}
                 timezone={learnerTimezone}
                 onTimezone={setTimezone}

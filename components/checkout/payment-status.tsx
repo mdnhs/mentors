@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { ConfirmAction } from "@/components/site/confirm-action"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { usePrincipal } from "@/lib/auth"
 import { formatDate, formatPrice, formatTime, timezoneLabel } from "@/lib/format"
 import type { Order } from "@/lib/orders"
 import { cancelBookingWithRefund, payForOrder } from "@/lib/payment-client"
@@ -19,6 +20,7 @@ type Props = {
 
 export function PaymentStatus({ order, onRestart }: Props) {
   const { bookings } = useAppState()
+  const principal = usePrincipal()
   const [busy, setBusy] = useState<"retry" | "cancel" | null>(null)
   const { status, quote } = order
   // Orders carry no timezone of their own, so the hold is shown in the zone the learner booked in.
@@ -29,7 +31,7 @@ export function PaymentStatus({ order, onRestart }: Props) {
     if (busy) return
     setBusy(action)
     try {
-      const outcome = action === "retry" ? await payForOrder(order.id, order.method, "success") : await cancelBookingWithRefund(order.bookingId)
+      const outcome = action === "retry" ? await payForOrder(order.id, order.method, "success") : await cancelBookingWithRefund(principal, order.bookingId)
       if (!outcome.ok) toast.error(outcome.message)
     } finally {
       setBusy(null)

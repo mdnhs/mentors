@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { addDayOff, availabilityEqual, validateAvailability } from "@/lib/availability-settings"
+import { deliverReview } from "@/lib/booking-service"
 import { getMentor } from "@/lib/data"
 import { incomingBookings, incomingOrders } from "@/lib/data/incoming"
 import { mentorBookings, mentorTasks, splitMentorBookings } from "@/lib/mentor-dashboard"
@@ -298,7 +299,7 @@ test.describe("mentor workspace logic", () => {
   const own = { bookings: [], orders: [] }
   const incoming = { bookings: incomingBookings, orders: incomingOrders }
   const items = mentorBookings(own, incoming, DEMO_MENTOR_SLUG, "Rafi Ahmed")
-  const live = (overrides = {}) => ({ bookings: items, offers: catalog.filter((offer) => offer.status === "published"), availability: getMentor(DEMO_MENTOR_SLUG)!.availability, summary: summarize(data(), DEMO_MENTOR_SLUG, NOW), ...overrides })
+  const live = (overrides = {}) => ({ bookings: items, offers: catalog.filter((offer) => offer.status === "published"), availability: getMentor(DEMO_MENTOR_SLUG)!.availability, summary: summarize(data(), DEMO_MENTOR_SLUG, NOW), mentorTimezone: getMentor(DEMO_MENTOR_SLUG)!.timezone, ...overrides })
 
   test("bookings carry the learner's name and where they came from", () => {
     expect(items.map((item) => item.learner)).toEqual(["Anika Rahman", "Imtiaz Hossain", "Nabila Karim"])
@@ -318,6 +319,26 @@ test.describe("mentor workspace logic", () => {
     expect(tasks[0]).toMatchObject({ id: "prep-ib-3", title: "Get ready for System design mock interview" })
     expect(tasks[0].detail).toContain("Nabila Karim")
     expect(tasks[0].detail).toContain("payments service")
+  })
+
+  test("the next-up task shows the time in the mentor's timezone, labelled", () => {
+    const tasks = mentorTasks(live(), NOW)
+    const next = tasks.find((task) => task.id === "next-ib-3")!
+    // ib-3 starts at 20:00 in Singapore, which is 18:00 in the learner's Dhaka timezone.
+    expect(next.detail).toContain("8:00")
+    expect(next.detail).not.toContain("6:00")
+    expect(next.detail).toContain("Singapore")
+  })
+
+  test("a delivered review becomes payable; one still in review does not", () => {
+    const review = { ...incomingBookings[2], id: "rv-1", kind: "review" as const, status: "in-review" as const, durationMinutes: undefined }
+    const order = { ...incomingOrders[2], id: "ORD-RV-1", bookingId: "rv-1" }
+    const before = summarize({ orders: [order], bookings: [review], payouts: [] }, DEMO_MENTOR_SLUG, NOW)
+    expect(before.availableForPayout).toBe(0)
+    const delivered = deliverReview([review], "rv-1", mentorActor)
+    const after = summarize({ orders: [order], bookings: delivered.bookings, payouts: [] }, DEMO_MENTOR_SLUG, NOW)
+    expect(after.availableForPayout).toBeGreaterThan(0)
+    expect(after.completedBookings).toBe(1)
   })
 
   test("a payout is suggested when there is a balance and none pending", () => {

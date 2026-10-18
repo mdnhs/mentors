@@ -205,9 +205,9 @@ test.describe("notes and action plans", () => {
   })
 
   test("private notes never appear on the mentor dashboard", async ({ page }) => {
-    await signedIn(page, { role: "mentor" })
     await page.goto("/dashboard/bookings/bk-0994")
     await page.locator("#notes").getByLabel(/Your private notes/).fill("secret learner note")
+    await signedIn(page, { role: "mentor" })
     await page.goto("/dashboard/mentor")
     await expect(page.getByText("secret learner note")).toHaveCount(0)
   })

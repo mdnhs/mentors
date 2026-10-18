@@ -7,7 +7,8 @@ import { toast } from "sonner"
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { cancelDecision, policyFor, rescheduleDecision } from "@/lib/booking-policy"
+import { usePrincipal } from "@/lib/auth"
+import { cancelDecision, effectiveStatus, isActive, policyFor, rescheduleDecision } from "@/lib/booking-policy"
 import { cancellationTerms } from "@/lib/offers"
 import { isUnpaid, type Order } from "@/lib/orders"
 import { cancelBookingWithRefund, settleDemoRefund } from "@/lib/payment-client"
@@ -26,6 +27,7 @@ export function BookingActions({ booking, order, now }: { booking: Booking; orde
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const principal = usePrincipal()
 
   const cancel = cancelDecision(booking, now)
   const processing = order?.status === "processing"
@@ -38,7 +40,7 @@ export function BookingActions({ booking, order, now }: { booking: Booking; orde
     setBusy(true)
     setError(null)
     try {
-      const outcome = await cancelBookingWithRefund(booking.id)
+      const outcome = await cancelBookingWithRefund(principal, booking.id)
       if (!outcome.ok) {
         setError(outcome.message)
         return
@@ -76,6 +78,7 @@ export function BookingActions({ booking, order, now }: { booking: Booking; orde
           Cancel session
         </Button>
       )}
+      {!cancel.allowed && isActive(effectiveStatus(booking, now)) && <span className="text-xs text-muted-foreground">{cancel.reason}</span>}
 
       <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
         <DialogContent>

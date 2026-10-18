@@ -26,10 +26,13 @@ const reasonLabels: Record<SlotReason, string> = {
   conflict: "Your session",
 }
 
+const noBookings: Booking[] = []
+
 type SchedulePickerProps = {
   mentor: Mentor
   durationMinutes: number
   bookings: Booking[]
+  otherBookings?: Booking[]
   now: Date
   ignoreBookingId?: string
   timezone: string
@@ -38,7 +41,7 @@ type SchedulePickerProps = {
   onChange: (startsAt: string | null) => void
 }
 
-export function SchedulePicker({ mentor, durationMinutes, bookings, now, ignoreBookingId, timezone, onTimezone, value, onChange }: SchedulePickerProps) {
+export function SchedulePicker({ mentor, durationMinutes, bookings, otherBookings = noBookings, now, ignoreBookingId, timezone, onTimezone, value, onChange }: SchedulePickerProps) {
   const [pickedDay, setPickedDay] = useState<string | null>(null)
   const firstName = mentor.name.split(" ")[0]
 
@@ -47,11 +50,11 @@ export function SchedulePicker({ mentor, durationMinutes, bookings, now, ignoreB
       getSlots(
         mentor,
         durationMinutes,
-        getBusyIntervals(mentor, bookings, now, ignoreBookingId),
+        getBusyIntervals(mentor, [...bookings, ...otherBookings], now, ignoreBookingId),
         now,
         getLearnerIntervals(bookings, now, ignoreBookingId)
       ),
-    [mentor, durationMinutes, bookings, now, ignoreBookingId]
+    [mentor, durationMinutes, bookings, otherBookings, now, ignoreBookingId]
   )
   const byDay = useMemo(() => slotsByDay(slots, timezone), [slots, timezone])
 

@@ -15,7 +15,7 @@ export const instant = false
 export default function DashboardPage() {
   return (
     <Container className="max-w-5xl pt-8 pb-16 sm:pt-12 sm:pb-24">
-      <RequireSignIn>
+      <RequireSignIn role="learner">
         <DashboardGreeting />
         <LearnerDashboard />
         <WorkspaceLink />

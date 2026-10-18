@@ -1,7 +1,7 @@
 import { demoGatewayEvent } from "@/lib/demo-gateway"
 import type { PaymentMethod } from "@/lib/orders"
-import { applyPaymentEvent, beginPayment, cancelSession, cancelWithRefund, type PaymentEvent, type PaymentOutcome } from "@/lib/payment-service"
-import type { Actor } from "@/lib/permissions"
+import { applyPaymentEvent, beginPayment, cancelSession, cancelWithRefund, type CancelChange, type PaymentEvent, type PaymentOutcome } from "@/lib/payment-service"
+import type { Actor, Principal } from "@/lib/permissions"
 import { transact } from "@/lib/store"
 
 export type DemoResult = "success" | "failure"
@@ -33,10 +33,14 @@ export const settleDemoRefund = (orderId: string, scope: Scope = "learner") => d
 // The demo gateway has no record of a payment the learner walked away from, so it reports it as failed.
 export const resetStalledPayment = (orderId: string) => deliver(orderId, "payment.failed")
 
-export const cancelBookingWithRefund = (bookingId: string) => transact((current) => cancelWithRefund(current, bookingId, new Date()))
+// Other roles are refused (admins cancel via lib/admin-client.ts, which audits); signed-out guests can check out, so they may close their own hold.
+export async function cancelBookingWithRefund(principal: Principal | null, bookingId: string): Promise<CancelChange["outcome"]> {
+  if (principal && principal.role !== "learner") return { ok: false, code: "not-allowed", message: "Only the learner who made this booking can cancel it here." }
+  return transact((current) => cancelWithRefund(current, bookingId, new Date()))
+}
 
-export async function cancelSessionAndRefund(sessionId: string) {
-  const outcome = await transact((current) => cancelSession(current, sessionId, new Date()))
+export async function cancelSessionAndRefund(actor: Actor | null, sessionId: string) {
+  const outcome = await transact((current) => cancelSession(current, sessionId, new Date(), actor))
   if (outcome.ok) for (const orderId of outcome.refundOrderIds) await settleDemoRefund(orderId)
   return outcome
 }

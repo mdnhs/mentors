@@ -1,6 +1,6 @@
 import { effectiveStatus, isActive } from "@/lib/booking-policy"
 import { hasOpenTimes } from "@/lib/availability-settings"
-import { formatCountdown, formatDate, formatPrice, formatTime } from "@/lib/format"
+import { formatCountdown, formatDate, formatPrice, formatTime, timezoneLabel } from "@/lib/format"
 import { MIN_PAYOUT, type FinanceSummary } from "@/lib/mentor-finance"
 import type { Order } from "@/lib/orders"
 import type { Booking, MentorAvailability, Offer } from "@/lib/types"
@@ -35,10 +35,11 @@ export type TaskContext = {
   offers: Offer[]
   availability: MentorAvailability
   summary: FinanceSummary
+  mentorTimezone: string
 }
 
 // What the mentor should do next, most pressing first: a session soon, a payout, unfinished offers, then setup gaps.
-export function mentorTasks({ bookings, offers, availability, summary }: TaskContext, now: Date): MentorTask[] {
+export function mentorTasks({ bookings, offers, availability, summary, mentorTimezone }: TaskContext, now: Date): MentorTask[] {
   const tasks: MentorTask[] = []
   const { upcoming } = splitMentorBookings(bookings, now)
   const confirmed = upcoming.filter((item) => effectiveStatus(item.booking, now) === "confirmed" && item.booking.kind !== "review")
@@ -75,7 +76,7 @@ export function mentorTasks({ bookings, offers, availability, summary }: TaskCon
 
   const next = confirmed.find((item) => !soon || item.booking.id !== soon.booking.id)
   if (next) {
-    tasks.push({ id: `next-${next.booking.id}`, title: `Next up: ${next.booking.title}`, detail: `${next.learner}, ${formatDate(next.booking.date, next.booking.timezone)} at ${formatTime(next.booking.date, next.booking.timezone)}`, href: "#bookings", cta: "View booking" })
+    tasks.push({ id: `next-${next.booking.id}`, title: `Next up: ${next.booking.title}`, detail: `${next.learner}, ${formatDate(next.booking.date, mentorTimezone)} at ${formatTime(next.booking.date, mentorTimezone)} ${timezoneLabel(mentorTimezone, next.booking.date).split(" ")[0]}`, href: "#bookings", cta: "View booking" })
   }
   return tasks
 }

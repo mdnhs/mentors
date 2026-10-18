@@ -30,7 +30,7 @@ export function MentorOverview() {
     )
 
   const { upcoming, completed, closed } = splitMentorBookings(bookings, now)
-  const tasks = mentorTasks({ bookings, offers: mentor.offers, availability: mentor.availability, summary }, now)
+  const tasks = mentorTasks({ bookings, offers: mentor.offers, availability: mentor.availability, summary, mentorTimezone: mentor.timezone }, now)
   const [top, ...rest] = tasks
   const sessions = getMentorSessions(mentor.slug).map((session) => resolveSession(session, state))
   const reviews = getReviews(mentor.slug).slice(0, 3)
@@ -149,7 +149,7 @@ export function MentorOverview() {
                   <SessionBadge view={{ phase: session.status === "cancelled" ? "cancelled" : "scheduled", learner: "none", check: { open: true } }} />
                 </p>
               </div>
-              {session.status !== "cancelled" && <CancelSession session={session} />}
+              {session.status !== "cancelled" && new Date(session.startsAt) > now && <CancelSession session={session} actor={actor} />}
             </li>
           ))}
           {sessions.length === 0 && <li className="p-6 text-center text-sm text-muted-foreground">No live sessions scheduled.</li>}

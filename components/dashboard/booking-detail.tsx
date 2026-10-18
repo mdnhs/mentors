@@ -23,7 +23,7 @@ import { payForOrder } from "@/lib/payment-client"
 import { useAppState, useNow } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
-// Only looks in the signed-in learner's own bookings, so another person's id simply isn't found.
+// Bookings live in this browser's shared demo store; the page's learner-only gate is what keeps other roles out.
 export function BookingDetail({ id }: { id: string }) {
   const { bookings, orders } = useAppState()
   const now = useNow()

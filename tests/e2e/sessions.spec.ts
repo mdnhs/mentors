@@ -193,6 +193,8 @@ test.describe("cancelling a session", () => {
     await expect(page.getByText("This session was cancelled.").locator("visible=true").first()).toBeVisible()
     await expect(page.getByRole("button", { name: /Reserve seat/ })).toHaveCount(0)
 
+    // The learner dashboard is learner-only, so switch the simulated session back before opening it.
+    await page.evaluate(() => localStorage.setItem("mentorbridge:session", JSON.stringify({ email: "rafi@example.com", role: "learner" })))
     await page.goto("/dashboard")
     await page.getByRole("tab", { name: /Past/ }).click()
     const row = page.locator("section[aria-labelledby=bookings] li").filter({ hasText: "System Design Essentials" })

@@ -1,6 +1,7 @@
 import { getBusyIntervals, holdsSlot, slotReasonMessage, validateSlot, type SlotRejection } from "@/lib/availability"
 import { cancelDecision, rescheduleDecision } from "@/lib/booking-policy"
 import { getOfferAvailability } from "@/lib/offers"
+import { canManageMentor, FORBIDDEN, type Actor } from "@/lib/permissions"
 import { quote } from "@/lib/pricing"
 import { checkEnrollment, type EnrollmentBlock } from "@/lib/sessions"
 import type { Booking, GroupSession, Mentor, Offer, OfferType } from "@/lib/types"
@@ -65,7 +66,8 @@ function learnerHasSessionAt(bookings: Booking[], start: number, durationMinutes
 // Pure and synchronous: given the current bookings it either returns the new list or a refusal.
 // The caller must run it against freshly read state inside one critical section. The booking is only a
 // pending hold: the price comes from the offer, never the caller, and payment confirms it.
-export function placeBooking(bookings: Booking[], request: BookingRequest, now: Date): Change {
+// `otherBookings` keep the mentor busy (e.g. other learners' bookings) but never count as the learner's own.
+export function placeBooking(bookings: Booking[], request: BookingRequest, now: Date, otherBookings: Booking[] = []): Change {
   const existing = bookings.find((booking) => booking.requestId === request.requestId)
   if (existing) return { bookings, outcome: { ok: true, booking: existing, duplicate: true } }
 
@@ -99,7 +101,7 @@ export function placeBooking(bookings: Booking[], request: BookingRequest, now: 
   }
 
   if (!request.startsAt) return fail(bookings, "invalid", slotReasonMessage("invalid", mentor))
-  const check = validateSlot(mentor, offer.durationMinutes, request.startsAt, getBusyIntervals(mentor, bookings, now), now)
+  const check = validateSlot(mentor, offer.durationMinutes, request.startsAt, getBusyIntervals(mentor, [...bookings, ...otherBookings], now), now)
   if (!check.ok) return fail(bookings, check.reason, slotReasonMessage(check.reason, mentor))
   const start = new Date(request.startsAt).getTime()
   if (learnerHasSessionAt(bookings, start, offer.durationMinutes, now)) {
@@ -163,7 +165,7 @@ export function cancelBooking(bookings: Booking[], bookingId: string, now: Date)
   }
 }
 
-export function rescheduleBooking(bookings: Booking[], bookingId: string, mentor: Mentor, startsAt: string, now: Date): Change {
+export function rescheduleBooking(bookings: Booking[], bookingId: string, mentor: Mentor, startsAt: string, now: Date, otherBookings: Booking[] = []): Change {
   const booking = bookings.find((item) => item.id === bookingId)
   if (!booking || booking.mentorSlug !== mentor.slug || !booking.durationMinutes) {
     return fail(bookings, "not-found", "We couldn't find that booking.")
@@ -172,7 +174,7 @@ export function rescheduleBooking(bookings: Booking[], bookingId: string, mentor
   if (!decision.allowed) return fail(bookings, "not-allowed", decision.reason)
 
   // Its own current slot must not block the new one, since the sessions can sit back to back.
-  const busy = getBusyIntervals(mentor, bookings, now, booking.id)
+  const busy = getBusyIntervals(mentor, [...bookings, ...otherBookings], now, booking.id)
   const check = validateSlot(mentor, booking.durationMinutes, startsAt, busy, now)
   if (!check.ok) return fail(bookings, check.reason, slotReasonMessage(check.reason, mentor))
   const start = new Date(startsAt).getTime()
@@ -191,3 +193,12 @@ export function rescheduleBooking(bookings: Booking[], bookingId: string, mentor
   }
 }
 
+// The mentor marks a written review as sent, which is what makes its earnings payable.
+export function deliverReview(bookings: Booking[], bookingId: string, actor: Actor | null): Change {
+  const booking = bookings.find((item) => item.id === bookingId)
+  if (!booking || booking.kind !== "review") return fail(bookings, "not-found", "We couldn't find that review.")
+  if (!canManageMentor(actor, booking.mentorSlug)) return fail(bookings, "not-allowed", FORBIDDEN)
+  if (booking.status !== "in-review") return fail(bookings, "not-allowed", "Only a review in progress can be marked as delivered.")
+  const delivered: Booking = { ...booking, status: "completed" }
+  return { bookings: bookings.map((item) => (item.id === bookingId ? delivered : item)), outcome: { ok: true, booking: delivered } }
+}

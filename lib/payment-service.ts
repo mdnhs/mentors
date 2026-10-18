@@ -1,4 +1,5 @@
 import { holdsSlot } from "@/lib/availability"
+import { getSession } from "@/lib/data"
 import { cancelDecision } from "@/lib/booking-policy"
 import {
   confirmedStatus,
@@ -18,7 +19,8 @@ import type { Booking } from "@/lib/types"
 // this module can move behind a server route unchanged when a backend and payment provider exist.
 
 // sessionId -> when the mentor cancelled it; a cancelled session accepts no new enrollment.
-export type Commerce = { bookings: Booking[]; orders: Order[] } & SessionOverrides
+// `otherBookings` are read-only bookings outside this scope that still keep a mentor busy.
+export type Commerce = { bookings: Booking[]; orders: Order[]; otherBookings?: Booking[] } & SessionOverrides
 
 export type PaymentFailure = BookingFailure | "order-not-found" | "amount-mismatch" | "invalid-state" | "expired"
 
@@ -82,7 +84,7 @@ export function startCheckout(state: Commerce, request: BookingRequest & Checkou
   const existingBooking = existing && state.bookings.find((booking) => booking.id === existing.bookingId)
   if (existing && existingBooking) return done(state, existing, existingBooking, true)
 
-  const change = placeBooking(state.bookings, request, now)
+  const change = placeBooking(state.bookings, request, now, state.otherBookings)
   if (!change.outcome.ok) return fail(state, change.outcome.code, change.outcome.message)
   return createOrder(state, { bookings: change.bookings, booking: change.outcome.booking }, { ...request, price: request.offer.price }, now)
 }
@@ -208,8 +210,14 @@ export type SessionCancelChange = Commerce & {
 }
 
 // A mentor cancelling the session overrides each attendee's own refund window: everyone is refunded in full.
-export function cancelSession(state: Commerce, sessionId: string, now: Date): SessionCancelChange {
+export function cancelSession(state: Commerce, sessionId: string, now: Date, actor: Actor | null): SessionCancelChange {
+  const session = getSession(sessionId)
+  if (!session) return { ...state, outcome: { ok: false, code: "not-found", message: "We couldn't find that session." } }
+  if (!canManageMentor(actor, session.mentorSlug)) return { ...state, outcome: { ok: false, code: "not-allowed", message: FORBIDDEN } }
   if (state.cancelledSessions[sessionId]) return { ...state, outcome: { ok: true, refundOrderIds: [] } }
+  if (new Date(session.startsAt) <= now) {
+    return { ...state, outcome: { ok: false, code: "not-allowed", message: "This session has already started, so it can't be cancelled." } }
+  }
 
   const refundOrderIds: string[] = []
   let orders = state.orders

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { CalendarClockIcon, QuoteIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { statusStyles, SamplePill } from "@/components/dashboard/booking-row"
 import { Button } from "@/components/ui/button"
@@ -14,6 +15,7 @@ import type { MentorBooking } from "@/lib/mentor-dashboard"
 import { orderStatusLabels } from "@/lib/orders"
 import { cancelBookingAsMentor } from "@/lib/payment-client"
 import type { Actor } from "@/lib/permissions"
+import { deliverReviewAsMentor } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 type Props = { item: MentorBooking; now: Date; actor: Actor | null; mentorTimezone: string }
@@ -29,6 +31,7 @@ export function MentorBookingCard({ item, now, actor, mentorTimezone }: Props) {
   const paidAmount = order && order.transactions.some((entry) => entry.kind === "charge" && entry.status === "succeeded") ? order.quote.total : 0
   const canCancel = cancelDecision(booking, now).allowed && status !== "expired"
   const isReview = booking.kind === "review"
+  const canDeliver = isReview && status === "in-review"
 
   const confirm = async () => {
     if (busy) return
@@ -37,6 +40,15 @@ export function MentorBookingCard({ item, now, actor, mentorTimezone }: Props) {
     setBusy(false)
     if (outcome.ok) setOpen(false)
     else setError(outcome.message)
+  }
+
+  const deliver = async () => {
+    if (busy) return
+    setBusy(true)
+    const outcome = await deliverReviewAsMentor(actor, booking.id, scope)
+    setBusy(false)
+    if (outcome.ok) toast.success(`Review marked as delivered to ${learner}`)
+    else toast.error(outcome.message)
   }
 
   return (
@@ -74,11 +86,18 @@ export function MentorBookingCard({ item, now, actor, mentorTimezone }: Props) {
         </blockquote>
       )}
 
-      {canCancel && (
-        <div className="mt-3">
-          <Button variant="ghost" size="sm" onClick={() => { setError(null); setOpen(true) }}>
-            Cancel and refund
-          </Button>
+      {(canCancel || canDeliver) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {canDeliver && (
+            <Button variant="outline" size="sm" disabled={busy} onClick={deliver}>
+              Mark as delivered
+            </Button>
+          )}
+          {canCancel && (
+            <Button variant="ghost" size="sm" onClick={() => { setError(null); setOpen(true) }}>
+              Cancel and refund
+            </Button>
+          )}
         </div>
       )}
 

@@ -46,10 +46,13 @@ test.describe("role permissions", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible()
   })
 
-  test("a mentor can also open the learner dashboard", async ({ page }) => {
+  test("the learner dashboard and booking details are not shown to a mentor", async ({ page }) => {
     await signedIn(page, { role: "mentor" })
-    await page.goto("/dashboard")
-    await expect(page.getByRole("navigation", { name: "Quick actions" })).toBeVisible()
+    for (const path of ["/dashboard", "/dashboard/bookings/bk-1001"]) {
+      await page.goto(path)
+      await expect(page.getByRole("heading", { name: "This area is for learners" })).toBeVisible()
+      await expect(page.getByRole("navigation", { name: "Quick actions" })).toHaveCount(0)
+    }
   })
 })
 

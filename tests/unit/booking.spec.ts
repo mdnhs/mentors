@@ -2,8 +2,10 @@ import { expect, test } from "@playwright/test"
 
 import { bookingRules, getBusyIntervals, getSlots, holdsSlot, slotsByDay, validateSlot } from "@/lib/availability"
 import { cancelDecision, effectiveStatus, rescheduleDecision } from "@/lib/booking-policy"
-import { cancelBooking, confirmedStatus, HOLD_MINUTES, placeBooking, rescheduleBooking, type BookingRequest } from "@/lib/booking-service"
+import { cancelBooking, confirmedStatus, deliverReview, HOLD_MINUTES, placeBooking, rescheduleBooking, type BookingRequest } from "@/lib/booking-service"
 import { getMentor } from "@/lib/data"
+import { incomingBookings } from "@/lib/data/incoming"
+import { actorFor } from "@/lib/permissions"
 import { dateKeyInZone, isDateKey, timeKeyInZone, zonedTimeToUtc } from "@/lib/timezone"
 import type { Booking, Mentor, OneOnOneOffer } from "@/lib/types"
 
@@ -264,6 +266,64 @@ test.describe("placing bookings", () => {
     const { booking } = book([], request("tanvir-rahman", undefined, { offer: review, mentor: m }))
     expect(booking.status).toBe("in-review")
     expect(booking.durationMinutes).toBeUndefined()
+  })
+})
+
+test.describe("other learners' bookings with the demo mentor", () => {
+  // ib-3 is on a Monday, so the mentor opens Mondays as they could from the availability editor.
+  const catalog = mentor("tanvir-rahman")
+  const m: Mentor = { ...catalog, availability: { ...catalog.availability, days: [1, ...catalog.availability.days] } }
+  const taken = incomingBookings.find((booking) => booking.id === "ib-3")!
+  const mock = m.offers.find((offer): offer is OneOnOneOffer => offer.id === taken.offerId)!
+
+  test("block the same time in the slot list and at checkout", () => {
+    const slot = getSlots(m, mock.durationMinutes, getBusyIntervals(m, incomingBookings, NOW), NOW).find((item) => item.startsAt === new Date(taken.date).toISOString())
+    expect(slot).toMatchObject({ available: false, reason: "booked" })
+    const req = request("tanvir-rahman", taken.date, { mentor: m, offer: mock })
+    expect(placeBooking([], req, NOW).outcome.ok).toBe(true)
+    expect(placeBooking([], req, NOW, incomingBookings).outcome).toMatchObject({ ok: false, code: "booked" })
+  })
+
+  test("don't count as the learner's own sessions", () => {
+    const req = request("tanvir-rahman", taken.date, { mentor: m, offer: mock })
+    const result = placeBooking([], req, NOW, incomingBookings)
+    expect(result.bookings).toEqual([])
+    expect(result.outcome).not.toMatchObject({ code: "learner-busy" })
+  })
+})
+
+test.describe("written reviews", () => {
+  const m = mentor("tanvir-rahman")
+  const offer = m.offers.find((item) => item.type === "review")!
+  const paidReview = () => book([], request("tanvir-rahman", undefined, { offer, mentor: m }))
+
+  test("can be cancelled for a full refund until the due date, then not at all", () => {
+    const { booking } = paidReview()
+    const due = new Date(booking.date).getTime()
+    expect(cancelDecision(booking, new Date(due - 60_000))).toEqual({ allowed: true, refundPercent: 100 })
+    for (const at of [new Date(due), new Date(due + 86_400_000)]) {
+      expect(cancelDecision(booking, at)).toEqual({ allowed: false, reason: expect.stringContaining("due date has passed") })
+    }
+  })
+
+  test("the owning mentor marks a review delivered, which completes it and ends cancellation", () => {
+    const { booking, bookings } = paidReview()
+    const delivered = deliverReview(bookings, booking.id, actorFor("mentor"))
+    expect(delivered.outcome).toMatchObject({ ok: true, booking: { status: "completed" } })
+    expect(effectiveStatus(delivered.bookings[0], NOW)).toBe("completed")
+    expect(cancelDecision(delivered.bookings[0], NOW)).toMatchObject({ allowed: false })
+    expect(deliverReview(delivered.bookings, booking.id, actorFor("mentor")).outcome).toMatchObject({ ok: false, code: "not-allowed" })
+  })
+
+  test("only the owning mentor can mark a review delivered, and only reviews", () => {
+    const { booking, bookings } = paidReview()
+    for (const actor of [null, actorFor("learner"), actorFor("admin"), { role: "mentor" as const, mentorSlug: "nusrat-jahan" }]) {
+      const result = deliverReview(bookings, booking.id, actor)
+      expect(result.outcome).toMatchObject({ ok: false, code: "not-allowed" })
+      expect(result.bookings).toBe(bookings)
+    }
+    const call = book([], request("nusrat-jahan", slotsFor("nusrat-jahan").find((slot) => slot.available)!.startsAt))
+    expect(deliverReview(call.bookings, call.booking.id, { role: "mentor", mentorSlug: "nusrat-jahan" }).outcome).toMatchObject({ ok: false, code: "not-found" })
   })
 })
 

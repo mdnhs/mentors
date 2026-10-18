@@ -19,7 +19,7 @@ import type { Booking, Mentor } from "@/lib/types"
 
 export function RescheduleFlow({ mentor, bookingId }: { mentor: Mentor; bookingId: string }) {
   const isClient = useIsClient()
-  const { bookings } = useAppState()
+  const { bookings, incoming } = useAppState()
   const [now] = useState(() => new Date())
   const [slot, setSlot] = useState<string | null>(null)
   const [timezone, setTimezone] = useState<string | null>(null)
@@ -80,7 +80,7 @@ export function RescheduleFlow({ mentor, bookingId }: { mentor: Mentor; bookingI
     setSubmitting(true)
     setError(null)
     await new Promise((resolve) => setTimeout(resolve, 600))
-    const outcome = await transact((current) => ({ ...current, ...rescheduleBooking(current.bookings, booking.id, mentor, slot, new Date()) }))
+    const outcome = await transact((current) => ({ ...current, ...rescheduleBooking(current.bookings, booking.id, mentor, slot, new Date(), current.otherBookings) }))
     if (outcome.ok) setMoved(outcome.booking)
     else {
       setError(outcome.message)
@@ -102,6 +102,7 @@ export function RescheduleFlow({ mentor, bookingId }: { mentor: Mentor; bookingI
           mentor={mentor}
           durationMinutes={booking.durationMinutes!}
           bookings={bookings}
+          otherBookings={incoming.bookings}
           now={now}
           ignoreBookingId={booking.id}
           timezone={learnerTimezone}

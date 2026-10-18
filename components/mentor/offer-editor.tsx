@@ -23,7 +23,7 @@ import { offerTypeLabels } from "@/lib/categories"
 import { getSession } from "@/lib/data"
 import { creatableTypes, draftsEqual, draftToOffer, emptyDraft, isValid, offerToDraft, statusLabels, validateDraft, type DraftErrors, type OfferDraft } from "@/lib/offer-management"
 import { DEMO_MENTOR_SLUG } from "@/lib/permissions"
-import { saveGroupCapacity, saveOffer } from "@/lib/store"
+import { saveOffer } from "@/lib/store"
 import type { Offer, OfferType } from "@/lib/types"
 
 const typeBlurbs: Record<OfferType, string> = {
@@ -127,17 +127,9 @@ function Form({ existing, capacity }: { existing?: Offer; capacity?: number }) {
       focusFirstInvalid(invalid)
       return
     }
-    if (existing?.type === "group" && existing.sessionId) {
-      const capacityError = saveGroupCapacity(actor, existing.sessionId, draft.capacity)
-      if (capacityError) {
-        setServerErrors({ capacity: capacityError })
-        setMessage({ tone: "error", text: capacityError })
-        focusFirstInvalid({ capacity: capacityError })
-        return
-      }
-    }
     const id = existing?.id ?? newId()
-    const result = saveOffer(actor, existing ? { kind: "update", id, draft } : { kind: "create", id, draft })
+    const capacity = existing?.type === "group" && existing.sessionId ? { sessionId: existing.sessionId, value: draft.capacity } : undefined
+    const result = saveOffer(actor, existing ? { kind: "update", id, draft } : { kind: "create", id, draft }, capacity)
     if (!result.ok) {
       setServerErrors(result.errors ?? {})
       setMessage({ tone: "error", text: result.message })

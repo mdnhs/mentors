@@ -14,6 +14,7 @@ import {
   seatsTaken,
   sessionPhase,
 } from "@/lib/sessions"
+import type { Actor } from "@/lib/permissions"
 import { searchSessions } from "@/lib/session-search"
 import type { Booking, GroupSession } from "@/lib/types"
 
@@ -195,10 +196,11 @@ test.describe("meeting details", () => {
 
 test.describe("session cancellation and refunds", () => {
   const target = session("sql-analytics-interview-prep")
+  const owner: Actor = { role: "mentor", mentorSlug: target.mentorSlug }
 
   test("refunds a paid attendee in full and closes the booking", () => {
     const { state, order, booking } = paidEnrollment(target)
-    const result = cancelSession(state, target.id, later(3))
+    const result = cancelSession(state, target.id, later(3), owner)
     expect(result.outcome).toMatchObject({ ok: true, refundOrderIds: [order.id] })
     expect(result.orders[0]).toMatchObject({ status: "refund-pending", refundPercent: 100, refundAmount: order.quote.total })
     expect(result.bookings.find((item) => item.id === booking.id)).toMatchObject({ status: "cancelled", refundPercent: 100 })
@@ -207,7 +209,7 @@ test.describe("session cancellation and refunds", () => {
 
   test("closes an unpaid hold without any refund", () => {
     const held = startGroupCheckout(empty, request(target), NOW)
-    const result = cancelSession(held, target.id, later(3))
+    const result = cancelSession(held, target.id, later(3), owner)
     expect(result.outcome).toMatchObject({ ok: true, refundOrderIds: [] })
     expect(result.orders[0].status).toBe("cancelled")
     expect(result.orders[0].refundAmount).toBeUndefined()
@@ -218,14 +220,14 @@ test.describe("session cancellation and refunds", () => {
   test("refunds ignore the attendee's own refund window", () => {
     const { state, order } = paidEnrollment(target, NOW)
     const lateNow = new Date(new Date(target.startsAt).getTime() - 60_000)
-    const result = cancelSession(state, target.id, lateNow)
+    const result = cancelSession(state, target.id, lateNow, owner)
     expect(result.orders.find((item) => item.id === order.id)!.refundAmount).toBe(order.quote.total)
   })
 
   test("is idempotent and blocks new enrollment afterwards", () => {
     const { state } = paidEnrollment(target)
-    const once = cancelSession(state, target.id, later(3))
-    const twice = cancelSession(once, target.id, later(4))
+    const once = cancelSession(state, target.id, later(3), owner)
+    const twice = cancelSession(once, target.id, later(4), owner)
     expect(twice.orders).toBe(once.orders)
     expect(twice.outcome).toMatchObject({ ok: true, refundOrderIds: [] })
     expect(startGroupCheckout(twice, request(target), later(5)).outcome).toMatchObject({ ok: false, code: "session-cancelled" })
@@ -236,16 +238,38 @@ test.describe("session cancellation and refunds", () => {
     if (!first.outcome.ok) throw new Error("setup")
     const order = first.outcome.order
     const processing = beginPayment(first, order.id, "bkash", later(1)) as Commerce
-    const cancelled = cancelSession(processing, target.id, later(2))
+    const cancelled = cancelSession(processing, target.id, later(2), owner)
     const settled = applyPaymentEvent(cancelled, { id: "late", type: "payment.succeeded", orderId: order.id, amount: order.quote.total, currency: "BDT" }, later(3)) as Commerce
     const final = settled.orders.find((item) => item.id === order.id) as Order
     expect(final).toMatchObject({ status: "refund-pending", refundAmount: order.quote.total })
     expect(settled.bookings[0].status).toBe("cancelled")
   })
 
+  test("can't be cancelled once it has started or ended, so nobody is refunded after the fact", () => {
+    const { state, order } = paidEnrollment(target)
+    const start = new Date(target.startsAt).getTime()
+    for (const at of [new Date(start), new Date(start + target.durationMinutes * 60_000 + 60_000)]) {
+      const result = cancelSession(state, target.id, at, owner)
+      expect(result.outcome).toMatchObject({ ok: false, code: "not-allowed", message: expect.stringContaining("already started") })
+      expect(result.orders).toBe(state.orders)
+      expect(result.cancelledSessions[target.id]).toBeUndefined()
+      expect(result.orders.find((item) => item.id === order.id)!.refundAmount).toBeUndefined()
+    }
+  })
+
+  test("only the mentor who runs the session can cancel it", () => {
+    const { state } = paidEnrollment(target)
+    for (const actor of [null, { role: "learner" } as Actor, { role: "admin" } as Actor, { role: "mentor", mentorSlug: "someone-else" } as Actor]) {
+      const result = cancelSession(state, target.id, later(3), actor)
+      expect(result.outcome).toMatchObject({ ok: false, code: "not-allowed" })
+      expect(result.bookings).toBe(state.bookings)
+    }
+    expect(cancelSession(state, "no-such-session", later(3), owner).outcome).toMatchObject({ ok: false, code: "not-found" })
+  })
+
   test("a refunded session leaves the ledger with no revenue and no earnings", () => {
     const { state, order } = paidEnrollment(target)
-    const cancelled = cancelSession(state, target.id, later(3))
+    const cancelled = cancelSession(state, target.id, later(3), owner)
     const pending = cancelled.orders.find((item) => item.id === order.id) as Order
     const refunded = applyPaymentEvent(
       cancelled,

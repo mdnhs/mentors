@@ -45,7 +45,10 @@ export function cancelDecision(booking: Booking, now: Date): CancelDecision {
   // Nothing has been paid for a pending hold, so there is nothing to refund.
   if (status === "pending") return { allowed: true, refundPercent: 0 }
   const rule = policyRules[policyFor(booking)]
-  if (booking.kind === "review") return { allowed: true, refundPercent: rule.lateRefundPercent }
+  if (booking.kind === "review") {
+    if (now.getTime() >= new Date(booking.date).getTime()) return { allowed: false, reason: "This review's due date has passed, so it can no longer be cancelled." }
+    return { allowed: true, refundPercent: rule.lateRefundPercent }
+  }
   const hoursLeft = (new Date(booking.date).getTime() - now.getTime()) / HOUR_MS
   if (hoursLeft <= 0) return { allowed: false, reason: "This session has already started." }
   return { allowed: true, refundPercent: hoursLeft >= rule.fullRefundHours ? 100 : rule.lateRefundPercent }

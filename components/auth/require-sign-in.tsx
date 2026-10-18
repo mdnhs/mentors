@@ -4,13 +4,15 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { LockIcon } from "lucide-react"
 
+import { RequireRole } from "@/components/auth/require-role"
 import { EmptyState } from "@/components/site/empty-state"
 import { buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
+import type { Role } from "@/lib/permissions"
 
 // Gates the learner screens behind the simulated sign-in. It hides nothing from the browser's storage.
-export function RequireSignIn({ children }: { children: React.ReactNode }) {
+export function RequireSignIn({ role, children }: { role?: Role; children: React.ReactNode }) {
   const auth = useAuth()
   const pathname = usePathname()
 
@@ -42,5 +44,5 @@ export function RequireSignIn({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return <>{children}</>
+  return role ? <RequireRole role={role}>{children}</RequireRole> : <>{children}</>
 }

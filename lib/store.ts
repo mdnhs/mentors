@@ -21,6 +21,7 @@ import {
 import { createDraft, review, submit, updateDraft, viewEvidence, type Application, type ApplicationData, type ReviewAction } from "@/lib/mentor-application"
 import { getMentor, getMentors, getReviewById, getSession } from "@/lib/data"
 import { validateAvailability, type AvailabilityErrors } from "@/lib/availability-settings"
+import { deliverReview } from "@/lib/booking-service"
 import { manageOffers, validateCapacity, type OfferChange, type OfferResult } from "@/lib/offer-management"
 import { requestPayout, settlePayout, type Payout, type PayoutResult } from "@/lib/mentor-finance"
 import { canManageMentor, DEMO_MENTOR_SLUG, FORBIDDEN, isAdmin, ADMIN_FORBIDDEN, type Actor, type Principal } from "@/lib/permissions"
@@ -224,7 +225,8 @@ export async function transact<O>(change: (current: Commerce) => Commerce & { ou
     readStorage()
     state = loadFromStorage()
     const source = scope === "incoming" ? state.incoming : state
-    const result = change({ bookings: source.bookings, orders: source.orders, cancelledSessions: state.cancelledSessions, sessionCapacity: state.sessionCapacity })
+    const otherBookings = scope === "incoming" ? state.bookings : state.incoming.bookings
+    const result = change({ bookings: source.bookings, orders: source.orders, otherBookings, cancelledSessions: state.cancelledSessions, sessionCapacity: state.sessionCapacity })
     const changed = result.bookings !== source.bookings || result.orders !== source.orders || result.cancelledSessions !== state.cancelledSessions
     if (changed) {
       const shared = { cancelledSessions: result.cancelledSessions }
@@ -283,25 +285,30 @@ export function useIsClient() {
 // Mentor workspace changes. Each one re-checks the actor, so the UI hiding a button is never the only guard.
 const mentorOffers = () => state.workspace.offers ?? getMentor(DEMO_MENTOR_SLUG)!.offers
 
-export function saveOffer(actor: Actor | null, change: OfferChange): OfferResult {
+// A group offer's seat count is validated with the offer and both persist together, or neither does.
+export function saveOffer(actor: Actor | null, change: OfferChange, capacity?: { sessionId: string; value: string }): OfferResult {
   readStorage()
   const offers = mentorOffers()
   const existing = "id" in change ? offers.find((offer) => offer.id === change.id) : undefined
   const session = existing?.type === "group" ? getSession(existing.sessionId) : undefined
   const result = manageOffers(actor, DEMO_MENTOR_SLUG, offers, change, { minCapacity: session?.seats.taken })
-  if (result.ok) setState({ ...state, workspace: { ...state.workspace, offers: result.offers } })
+  if (!result.ok) return result
+  const capacityError = capacity && groupCapacityError(capacity.sessionId, capacity.value)
+  if (capacityError) return { ok: false, code: "invalid", message: capacityError, errors: { capacity: capacityError } }
+  const sessionCapacity = capacity ? { ...state.sessionCapacity, [capacity.sessionId]: Number(capacity.value) } : state.sessionCapacity
+  setState({ ...state, sessionCapacity, workspace: { ...state.workspace, offers: result.offers } })
   return result
 }
 
-export function saveGroupCapacity(actor: Actor | null, sessionId: string, value: string): string | undefined {
-  readStorage()
-  if (!canManageMentor(actor, DEMO_MENTOR_SLUG)) return FORBIDDEN
+function groupCapacityError(sessionId: string, value: string): string | undefined {
   const session = getSession(sessionId)
   if (!session || session.mentorSlug !== DEMO_MENTOR_SLUG) return "We couldn't find that session."
   const own = state.bookings.filter((booking) => booking.sessionId === sessionId && (booking.status === "confirmed" || booking.status === "pending")).length
-  const error = validateCapacity(value, session.seats.taken + own)
-  if (error) return error
-  setState({ ...state, sessionCapacity: { ...state.sessionCapacity, [sessionId]: Number(value) } })
+  return validateCapacity(value, session.seats.taken + own)
+}
+
+export function deliverReviewAsMentor(actor: Actor | null, bookingId: string, scope: "learner" | "incoming") {
+  return transact((current) => ({ ...current, ...deliverReview(current.bookings, bookingId, actor) }), scope)
 }
 
 export function saveAvailability(actor: Actor | null, availability: MentorAvailability): { ok: true } | { ok: false; errors: AvailabilityErrors; message?: string } {
