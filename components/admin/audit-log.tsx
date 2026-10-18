@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation"
 import { DataTable, type Column } from "@/components/admin/data-table"
 import { AdminPageHeader, DemoNotice, StatusBadge } from "@/components/admin/parts"
 import { useAdminSource } from "@/components/admin/use-admin"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { AdminAction, AdminAuditEvent } from "@/lib/admin"
@@ -115,13 +115,13 @@ function AuditLogInner() {
               <Label htmlFor="audit-from" className="text-xs text-muted-foreground">
                 From
               </Label>
-              <Input id="audit-from" type="date" value={filter.from ?? ""} max={filter.to} onChange={(event) => change("from", event.target.value)} className="h-8 w-40" />
+              <DatePicker id="audit-from" size="sm" clearable placeholder="Any date" value={filter.from ?? ""} max={filter.to} onChange={(value) => change("from", value)} className="w-44" />
             </div>
             <div className="grid gap-1">
               <Label htmlFor="audit-to" className="text-xs text-muted-foreground">
                 To
               </Label>
-              <Input id="audit-to" type="date" value={filter.to ?? ""} min={filter.from} onChange={(event) => change("to", event.target.value)} className="h-8 w-40" />
+              <DatePicker id="audit-to" size="sm" clearable placeholder="Any date" value={filter.to ?? ""} min={filter.from} onChange={(value) => change("to", value)} className="w-44" />
             </div>
             <div className="grid gap-1">
               <Label htmlFor="audit-actor" className="text-xs text-muted-foreground">

@@ -8,6 +8,7 @@ import { UnsavedIndicator, useUnsavedGuard } from "@/components/mentor/unsaved-g
 import { useMentorWorkspace } from "@/components/mentor/use-mentor-workspace"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { addDayOff, availabilityDefaults, availabilityEqual, startTimes, validateAvailability, weekdays, type AvailabilityErrors } from "@/lib/availability-settings"
@@ -171,23 +172,17 @@ export function AvailabilityEditor() {
             <Label htmlFor="avail-day-off" className="text-xs text-muted-foreground">
               Add a day off
             </Label>
-            <Input
+            <DatePicker
               id="avail-day-off"
-              type="date"
               min={today || undefined}
               value={dayOff}
               aria-invalid={dayOffError || errors.unavailableDates ? true : undefined}
               aria-describedby={dayOffError || errors.unavailableDates ? "avail-day-off-error" : "avail-day-off-help"}
-              onChange={(event) => {
-                setDayOff(event.target.value)
+              onChange={(value) => {
+                setDayOff(value)
                 setDayOffError(null)
               }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") return
-                event.preventDefault()
-                addBlocked()
-              }}
-              className="w-44"
+              className="w-52"
             />
           </div>
           <Button type="button" variant="outline" onClick={addBlocked} disabled={!dayOff}>

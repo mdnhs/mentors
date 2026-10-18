@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { pickDate } from "./helpers"
 
 const STORAGE_KEY = "mentorbridge:v1"
 const SESSION_KEY = "mentorbridge:session"
@@ -103,6 +104,14 @@ test.describe("moderation and audit", () => {
     await page.goto("/dashboard/admin/audit")
     await expect(page.getByRole("main")).toContainText("Mentor suspended")
     await expect(page.getByRole("main")).toContainText("tanvir-rahman")
+
+    await pickDate(page, "From", "2026-10-19")
+    await expect(page).toHaveURL(/from=2026-10-19/)
+    await expect(page.getByRole("main")).toContainText("No actions match these filters.")
+    await page.getByLabel("From").click()
+    await page.getByRole("button", { name: "Clear date" }).click()
+    await expect(page).not.toHaveURL(/from=/)
+    await expect(page.getByRole("main")).toContainText("Mentor suspended")
   })
 
   test("hiding a review and resolving a dispute are recorded", async ({ page }) => {

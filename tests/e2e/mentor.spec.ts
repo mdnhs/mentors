@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 
-import { signedIn } from "./helpers"
+import { pickDate, signedIn } from "./helpers"
 
 const STORAGE_KEY = "mentorbridge:v1"
 
@@ -271,13 +271,14 @@ test.describe("availability", () => {
     await expect(page.getByLabel("Minimum notice (hours)")).toBeFocused()
     await expect(page.getByLabel("Minimum notice (hours)")).toHaveAttribute("aria-invalid", "true")
     await page.getByLabel("Minimum notice (hours)").fill("12")
-    await page.getByLabel("Add a day off").fill("2026-10-01")
-    await page.getByRole("button", { name: "Add", exact: true }).click()
-    await expect(page.getByText("Pick today or a later date")).toBeVisible()
-    await page.getByLabel("Add a day off").fill("2026-12-25")
+    await page.getByLabel("Add a day off").click()
+    await expect(page.locator("[data-slot=calendar]").getByRole("button", { name: /October 1(st)?, 2026/ })).toBeDisabled()
+    await page.keyboard.press("Escape")
+    await pickDate(page, "Add a day off", "2026-12-25")
+    await expect(page.getByLabel("Add a day off")).toContainText("25 Dec 2026")
     await page.getByRole("button", { name: "Add", exact: true }).click()
     await expect(page.getByRole("list", { name: "Days off" })).toContainText("Dec")
-    await page.getByLabel("Add a day off").fill("2026-12-25")
+    await pickDate(page, "Add a day off", "2026-12-25")
     await page.getByRole("button", { name: "Add", exact: true }).click()
     await expect(page.getByText("That day is already off")).toBeVisible()
     await page.getByRole("group", { name: "Days", exact: true }).getByRole("button", { name: "Mon" }).click()

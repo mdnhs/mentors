@@ -14,3 +14,16 @@ export async function signedIn(page: Page, options: { email?: string; role?: "le
     { email, role }
   )
 }
+
+const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+
+// Opens a DatePicker by its label and steps forward month by month until the day is shown.
+export async function pickDate(page: Page, label: string, key: string) {
+  const [year, month, day] = key.split("-").map(Number)
+  await page.getByLabel(label).click()
+  const calendar = page.locator("[data-slot=calendar]")
+  for (let step = 0; step < 24 && !(await calendar.getByText(`${monthNames[month - 1]} ${year}`).isVisible()); step++) {
+    await calendar.getByRole("button", { name: /next month/i }).click()
+  }
+  await calendar.getByRole("button", { name: new RegExp(`${monthNames[month - 1]} ${day}(st|nd|rd|th)?, ${year}`) }).click()
+}
